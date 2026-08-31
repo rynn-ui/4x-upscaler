@@ -4,7 +4,7 @@
 
 ---
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/rynn-ui/4x-upscaler/blob/main/Video_Upscaler_AI_RealESRGAN.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/rynn-ui/4x-upscaler/blob/main/4x_upscaler.ipynb)
 
 ---
 
