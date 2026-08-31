@@ -17,13 +17,13 @@
 
 ---
 
-## 🚀 How to Run (2 Simple Steps)
+## 🚀 How to Run (1-Click Start)
 
 1. Click the **[Open in Colab](https://colab.research.google.com/github/rynn-ui/4x-upscaler/blob/main/4x_upscaler.ipynb)** badge above.
 2. In Google Colab:
    - Make sure GPU is enabled: **Runtime ➔ Change runtime type ➔ T4 GPU**.
-   - Run **Step 1: Setup 4X Engine** (~20 seconds).
-   - Run **Step 2: Launch 4X Studio** and click **`🚀 OPEN STUDIO IN NEW TAB`**!
+   - Tap **Play (▶️)** on the code cell (`Start 4X Upscaler`).
+   - Click **`🚀 OPEN STUDIO IN NEW TAB`** and enjoy upscaling!
 
 ---
 
