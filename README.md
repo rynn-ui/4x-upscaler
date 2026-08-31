@@ -19,7 +19,7 @@
 
 ## 🚀 How to Run (2 Simple Steps)
 
-1. Click the **[Open in Colab](https://colab.research.google.com/github/YOUR_GITHUB_USERNAME/4x-upscaler/blob/main/Video_Upscaler_AI_RealESRGAN.ipynb)** badge above.
+1. Click the **[Open in Colab](https://colab.research.google.com/github/rynn-ui/4x-upscaler/blob/main/4x_upscaler.ipynb)** badge above.
 2. In Google Colab:
    - Make sure GPU is enabled: **Runtime ➔ Change runtime type ➔ T4 GPU**.
    - Run **Step 1: Setup 4X Engine** (~20 seconds).
