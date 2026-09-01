@@ -17,9 +17,14 @@
 ## 🚀 Key Features
 
 ### ⚡ 1. 4X AI Super-Resolution (Cell 1)
-- **Real-ESRGAN AI Upscaling**: 2× Ultra-Fast Super-Resolution trained specifically for anime, AMVs, animations, and video footage.
-- **🎨 Color Correction (CC) Presets Suite**:
-  - Curated AMV & anime presets (`🌈 Vibrant Anime Pop`, `🎬 Soft Cinematic`, `🌑 Moody Dark Aesthetic`, `🔥 Intense Midnight Drama`, `🎞️ Vintage Retro Anime`, `⚡ Cyberpunk Cold Neon`, `⚙️ Custom Tuning`).
+- **AI Upscaling Models**:
+  - `4x_upscaler` *(Default)*: Ultra-crisp, high-contrast super-resolution fine-tuned for anime, AMVs, and twixtors.
+  - `Real-ESRGAN Anime`: High-fidelity enlargement for illustrations & general anime footage.
+- **🎯 Target Quality & Resolutions**: Select `Auto (2× Native)`, `1080p (FHD)`, `2K (1440p / QHD)`, or `4K (2160p / UHD)`.
+- **⏸️ Play / Pause & Cancel**: Real-time interactive Pause, Resume, and Stop controls during processing.
+- **🎨 Color Correction (CC) Suite**:
+  - `🔥 Sanchez CC`: Fine-tuned anime & AMV color grade featuring rich contrast, warm skin tones, punchy vibrance, and clean specular highlights.
+  - `⚡ Zhakacc CC`: Cool, high-definition anime color grade with crisp outlines, lifted exposure, controlled highlights, deep contrast, and stylized modern tones.
   - **Live Split-Screen Preview**: Real-time Before vs Graded side-by-side comparison with dynamic labels.
   - **⏱️ Video Timeline Scrubber**: Scrub anywhere along the video timeline to test CC and filters on different scenes.
   - **Fine-Tuning Color Drawer**: Full control over Exposure, Contrast, Saturation, Temperature, Tint, Highlights, Shadows, Whites, Blacks, Sharpen, and Film Fade.
@@ -49,7 +54,8 @@
 
 | Feature | Model / Engine | Best For | Output Resolution / FPS |
 | :--- | :--- | :--- | :--- |
-| **Super-Resolution** | `Real-ESRGAN 2x Anime` | Anime, AMVs, Edits | 2× Super-Resolution (e.g. 1080p ➔ 4K) |
+| **Super-Resolution** | `4x_upscaler` *(Default)* | Anime, AMVs, Twixtors | 1080p, 2K, 4K, or 2× Native |
+| **Super-Resolution** | `Real-ESRGAN Anime` | Illustrations, Anime | 1080p, 2K, 4K, or 2× Native |
 | **Color Grading** | `CC Suite & Enhancers` | AMVs, Demon Slayer / JJK Edits | Real-Time Preview & Graded Export |
 | **Interpolation** | `RIFE v4.6 (Anime/AMV)` | Anime, Animations, Cartoons | 24/30 FPS ➔ 60 FPS / 120 FPS |
 | **Interpolation** | `RIFE v4.25 (Motion)` | Fast Action, Sports, CGI | 2×, 4×, 8× Frame Multiplier |
