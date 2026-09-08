@@ -50,6 +50,31 @@
 
 ---
 
+### 🌊 3. Depth Map Studio (Cell 3)
+- **AI Monocular Depth Estimation**:
+  - `Depth Anything V2 (Small)`: Ultra-fast (>60 FPS on T4 GPU) with sharp character & geometric depth contours.
+  - `Depth Anything V2 (Base)`: High precision depth detail for complex backgrounds and scenery.
+  - `MiDaS (DPT-Hybrid)`: Classic VFX displacement and 3D camera projection depth.
+- **Acoustic Depth Map**: 3D Frequency-Time Spectrogram visualizer for audio files with synchronized audio playback.
+- **VFX Palettes**: Grayscale (Raw Depth / VFX Displacement), Inverted Grayscale, Inferno, Turbo, Magma, Viridis, Plasma, Spectral.
+- **Lossless Audio Passthrough**: Full audio preservation for videos and songs.
+
+---
+
+### 🎬 4. Roto Studio (Cell 4) — (Under Development)
+- **Precision AI Background Removal & Rotoscoping**:
+  - `RMBG v1.4` *(State-of-the-Art BRIA AI Matting ONNX)*: Ultra-crisp hair & edge isolation.
+  - `MODNet` *(Portrait Matting Fallback ONNX)*: Lightweight real-time human matting.
+- **Edge-Band Selective Refinement**: Guided filtering on uncertain boundary zones (0.05 < alpha < 0.95) with soft feathering.
+- **Temporal Optical Flow Smoothing**: Confidence-weighted Farneback optical flow blending eliminates video mask flickering with automatic scene-cut detection.
+- **Dual Export Downloads**:
+  - `WebM Transparent Video` (`libvpx-vp9` with `yuva420p` alpha channel + audio passthrough).
+  - `MP4 Composited Video` (Green screen, black, white, or custom background color + audio passthrough).
+  - High-res Transparent PNGs & Composited Images for photos.
+- **Live Mask Preview on Upload**: Immediate first-frame preview on checkerboard upon dragging & dropping media.
+
+---
+
 ## 🎯 Supported Models & Specifications
 
 | Feature | Model / Engine | Best For | Output Resolution / FPS |
@@ -59,7 +84,9 @@
 | **Color Grading** | `CC Suite & Enhancers` | AMVs, Demon Slayer / JJK Edits | Real-Time Preview & Graded Export |
 | **Interpolation** | `RIFE v4.6 (Anime/AMV)` | Anime, Animations, Cartoons | 24/30 FPS ➔ 60 FPS / 120 FPS |
 | **Interpolation** | `RIFE v4.25 (Motion)` | Fast Action, Sports, CGI | 2×, 4×, 8× Frame Multiplier |
-| **Interpolation** | `RIFE v4.22 (Realistic)`| Live-Action Footage, Movies | 60 FPS / Smooth Slow-Motion |
+| **Depth Estimation** | `Depth Anything V2` | 3D Displacement, Parallax | Grayscale, Inferno, Turbo, etc. |
+| **Audio Depth** | `3D Spectrogram Visualizer`| Music, Songs, Podcasts | High-Def 3D Depth Spectrogram |
+| **Rotoscoping** | `RMBG v1.4 (BRIA AI)` | Background Removal, Cutouts | Transparent WebM & Composited MP4 |
 
 ---
 
@@ -74,6 +101,12 @@
 4. **To Interpolate to 60/120 FPS (Cell 2)**:
    - Click **Play (▶️)** on **`Step 2: RIFE Video Frame Interpolation Studio`**.
    - Click **`🚀 OPEN RIFE STUDIO IN NEW TAB`** to interpolate your clips.
+5. **To Generate Depth Maps (Cell 3)**:
+   - Click **Play (▶️)** on **`Step 3: Depth Map Studio`**.
+   - Click **`🌊 OPEN DEPTH STUDIO IN NEW TAB`** to generate depth maps.
+6. **To Remove Backgrounds & Rotoscope (Cell 4)**:
+   - Click **Play (▶️)** on **`Step 4: Roto Studio`**.
+   - Click **`🎬 OPEN ROTO STUDIO IN NEW TAB`** to rotoscope videos and images.
 
 ---
 
@@ -81,7 +114,9 @@
 
 - **100% Private**: Files are processed entirely inside your personal Google Colab runtime and are automatically wiped upon session termination.
 - **Hardware Acceleration**: Built with native C/Cython kernels, CUDA FP16 tensor core acceleration, and hardware NVENC encoding.
+- **Interactive Control**: Every studio features instant Pause/Resume and Cancel controls.
 
 ---
 
 *Made with ❤️ by Ryn*
+
