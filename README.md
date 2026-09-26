@@ -18,7 +18,7 @@
 
 ### ⚡ 1. 4X AI Super-Resolution (Cell 1)
 - **AI Upscaling Models**:
-  - `4x_upscaler` *(Default)*: Ultra-crisp, high-contrast super-resolution fine-tuned for anime, AMVs, and twixtors.
+  - `4x_upscaler` *(Default)*: Lightweight ultra-fast compact deep neural net (`2x_XyetherAnime.safetensors`) optimized for instant loading, crisp character lines, and zero artifacting.
   - `Real-ESRGAN Anime`: High-fidelity enlargement for illustrations & general anime footage.
 - **🎯 Target Quality & Resolutions**: Select `Auto (2× Native)`, `1080p (FHD)`, `2K (1440p / QHD)`, or `4K (2160p / UHD)`.
 - **⏸️ Play / Pause & Cancel**: Real-time interactive Pause, Resume, and Stop controls during processing.
@@ -79,7 +79,7 @@
 
 | Feature | Model / Engine | Best For | Output Resolution / FPS |
 | :--- | :--- | :--- | :--- |
-| **Super-Resolution** | `4x_upscaler` *(Default)* | Anime, AMVs, Twixtors | 1080p, 2K, 4K, or 2× Native |
+| **Super-Resolution** | `4x_upscaler` *(Default)* | Anime, AMVs, Twixtors, Clean Lines | 1080p, 2K, 4K, or 2× Native |
 | **Super-Resolution** | `Real-ESRGAN Anime` | Illustrations, Anime | 1080p, 2K, 4K, or 2× Native |
 | **Color Grading** | `CC Suite & Enhancers` | AMVs, Demon Slayer / JJK Edits | Real-Time Preview & Graded Export |
 | **Interpolation** | `RIFE v4.6 (Anime/AMV)` | Anime, Animations, Cartoons | 24/30 FPS ➔ 60 FPS / 120 FPS |
