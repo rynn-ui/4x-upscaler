@@ -61,17 +61,17 @@
 
 ---
 
-### 🎬 4. Roto Studio (Cell 4) — (Under Development)
-- **Precision AI Background Removal & Rotoscoping**:
-  - `RMBG v1.4` *(State-of-the-Art BRIA AI Matting ONNX)*: Ultra-crisp hair & edge isolation.
-  - `MODNet` *(Portrait Matting Fallback ONNX)*: Lightweight real-time human matting.
-- **Edge-Band Selective Refinement**: Guided filtering on uncertain boundary zones (0.05 < alpha < 0.95) with soft feathering.
-- **Temporal Optical Flow Smoothing**: Confidence-weighted Farneback optical flow blending eliminates video mask flickering with automatic scene-cut detection.
-- **Dual Export Downloads**:
-  - `WebM Transparent Video` (`libvpx-vp9` with `yuva420p` alpha channel + audio passthrough).
-  - `MP4 Composited Video` (Green screen, black, white, or custom background color + audio passthrough).
-  - High-res Transparent PNGs & Composited Images for photos.
-- **Live Mask Preview on Upload**: Immediate first-frame preview on checkerboard upon dragging & dropping media.
+### 🧹 4. Denoiser Studio (Cell 4)
+- **AI Anti-Lines, Film Tear & Artifact Removal**:
+  - `1x-Archiver-AntiLines` *(Archivist Project Denoiser)*: Specialized restoration deep neural network designed to eradicate horizontal lines, tears, scratches, and low-bitrate compression noise without erasing genuine line art.
+  - Optimized for 720p/1080p native video and image processing with zero compression loss.
+- **Tiled & Seamless Processing Engine**: Linear cross-fade overlap blending eliminates border seams and prevents VRAM Out-Of-Memory even on high-res media.
+- **Full Video & Image Pipeline**:
+  - Native resolution denoised MP4 export with hardware-accelerated NVENC encoding.
+  - Lossless synchronized audio passthrough.
+  - High-resolution denoised PNG/JPG for images.
+- **Live Split-Screen Comparison**: Synchronized Before vs After video player and comparison image with side-by-side labels.
+- **Real-Time Controls**: Interactive Pause/Resume and Cancel controls during processing.
 
 ---
 
@@ -86,7 +86,7 @@
 | **Interpolation** | `RIFE v4.25 (Motion)` | Fast Action, Sports, CGI | 2×, 4×, 8× Frame Multiplier |
 | **Depth Estimation** | `Depth Anything V2` | 3D Displacement, Parallax | Grayscale, Inferno, Turbo, etc. |
 | **Audio Depth** | `3D Spectrogram Visualizer`| Music, Songs, Podcasts | High-Def 3D Depth Spectrogram |
-| **Rotoscoping** | `RMBG v1.4 (BRIA AI)` | Background Removal, Cutouts | Transparent WebM & Composited MP4 |
+| **Artifact Denoising** | `1x-Archiver-AntiLines` | Horizontal Lines, Scratches, Noise | Native Resolution (Clean 1080p/4K) |
 
 ---
 
@@ -104,9 +104,9 @@
 5. **To Generate Depth Maps (Cell 3)**:
    - Click **Play (▶️)** on **`Step 3: Depth Map Studio`**.
    - Click **`🌊 OPEN DEPTH STUDIO IN NEW TAB`** to generate depth maps.
-6. **To Remove Backgrounds & Rotoscope (Cell 4)**:
-   - Click **Play (▶️)** on **`Step 4: Roto Studio`**.
-   - Click **`🎬 OPEN ROTO STUDIO IN NEW TAB`** to rotoscope videos and images.
+6. **To Remove Lines & Artifacts / Denoise (Cell 4)**:
+   - Click **Play (▶️)** on **`Step 4: Denoiser Studio`**.
+   - Click **`🧹 OPEN DENOISER STUDIO IN NEW TAB`** to denoise videos and images.
 
 ---
 
