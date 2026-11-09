@@ -70,7 +70,7 @@
   - Native resolution denoised MP4 export with hardware-accelerated NVENC encoding.
   - Lossless synchronized audio passthrough.
   - High-resolution denoised PNG/JPG for images.
-- **Live Split-Screen Comparison**: Synchronized Before vs After video player and comparison image with side-by-side labels.
+- **Before vs After Comparison & Clean Download**: Synchronized side-by-side comparison player with single-click direct download for the full pristine denoised file.
 - **Real-Time Controls**: Interactive Pause/Resume and Cancel controls during processing.
 
 ---
