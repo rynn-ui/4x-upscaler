@@ -176,21 +176,21 @@ fun SettingsScreen(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "App Developer",
+                            text = "Developers & Team",
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "Developed by ryn",
+                            text = "Developed by ryn & contributors",
                             color = TextSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "Get in touch or review portfolio",
+                            text = "Get in touch or review project contributors",
                             color = TextMuted,
                             fontSize = 11.5.sp
                         )
@@ -403,24 +403,56 @@ fun SettingsScreen(
     }
 
     if (showContactDialog) {
-        val contacts = remember {
+        val developers = remember {
             listOf(
-                ContactChannel(
-                    title = "GitHub",
-                    handle = "github.com/rynn-ui",
-                    url = "https://github.com/rynn-ui",
-                    icon = Icons.Default.Code,
-                    iconColor = Color(0xFFF1F5F9),
-                    iconBg = Color(0xFF1E2430)
-                ),
-                ContactChannel(
-                    title = "Discord",
-                    handle = "@rynn0976 (Tap to copy)",
-                    discordId = "@rynn0976",
-                    icon = Icons.AutoMirrored.Filled.Chat,
-                    iconColor = Color(0xFFA78BFA),
-                    iconBg = Color(0xFF261D3A)
+                DeveloperMember(
+                    name = "ryn",
+                    role = "Lead Developer",
+                    channels = listOf(
+                        ContactChannel(
+                            title = "GitHub",
+                            handle = "github.com/rynn-ui",
+                            url = "https://github.com/rynn-ui",
+                            icon = Icons.Default.Code,
+                            iconColor = Color(0xFFF1F5F9),
+                            iconBg = Color(0xFF1E2430)
+                        ),
+                        ContactChannel(
+                            title = "Discord",
+                            handle = "@rynn0976 (Tap to copy)",
+                            discordId = "@rynn0976",
+                            icon = Icons.AutoMirrored.Filled.Chat,
+                            iconColor = Color(0xFFA78BFA),
+                            iconBg = Color(0xFF261D3A)
+                        )
+                    )
                 )
+                // ── 2nd Developer / Contributor ──────────────────────────────────────
+                // Collaborators can uncomment or add their profile & channels below:
+                /*
+                , DeveloperMember(
+                    name = "Co-Developer Name",
+                    role = "Co-Developer",
+                    channels = listOf(
+                        ContactChannel(
+                            title = "GitHub",
+                            handle = "github.com/collaborator",
+                            url = "https://github.com/collaborator",
+                            icon = Icons.Default.Code,
+                            iconColor = Color(0xFFF1F5F9),
+                            iconBg = Color(0xFF1E2430)
+                        ),
+                        ContactChannel(
+                            title = "Discord",
+                            handle = "@collaborator (Tap to copy)",
+                            discordId = "@collaborator",
+                            icon = Icons.AutoMirrored.Filled.Chat,
+                            iconColor = Color(0xFFA78BFA),
+                            iconBg = Color(0xFF261D3A)
+                        )
+                    )
+                )
+                */
             )
         }
 
@@ -448,13 +480,13 @@ fun SettingsScreen(
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Developer Contacts",
+                            text = "Project Developers",
                             color = Color.White,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "ryn (Upscaler Studio)",
+                            text = "Upscaler Studio Contributors",
                             color = TextSecondary,
                             fontSize = 12.sp
                         )
@@ -463,92 +495,126 @@ fun SettingsScreen(
             },
             text = {
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    contacts.forEach { item ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(ShapeCorner12)
-                                .background(Color(0xFF131722))
-                                .border(1.dp, Color(0xFF232838), ShapeCorner12)
-                                .clickable {
-                                    if (item.url != null) {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(item.url))
-                                        runCatching { context.startActivity(intent) }
-                                    } else if (item.discordId != null) {
-                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                        val clip = ClipData.newPlainText("Discord ID", item.discordId)
-                                        clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Discord ID copied: ${item.discordId}", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
+                    developers.forEach { dev ->
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(ShapeCorner10)
-                                    .background(item.iconBg),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = item.title,
-                                    tint = item.iconColor,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            }
-
-                            Spacer(Modifier.width(12.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = item.title,
+                                    text = dev.name,
                                     color = Color.White,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
-                                Spacer(Modifier.height(1.dp))
-                                Text(
-                                    text = item.handle,
-                                    color = TextSecondary,
-                                    fontSize = 11.5.sp
-                                )
-                            }
-
-                            if (item.discordId != null) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
+                                Box(
                                     modifier = Modifier
-                                        .clip(ShapeCorner8)
-                                        .background(Color(0xFF231E38))
-                                        .border(1.dp, Color(0xFF4C3B6E), ShapeCorner8)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        .clip(ShapeCorner6)
+                                        .background(Color(0xFF281E3C))
+                                        .padding(horizontal = 7.dp, vertical = 2.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy Discord ID",
-                                        tint = Color(0xFFA78BFA),
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
                                     Text(
-                                        text = "Copy",
-                                        color = Color.White,
+                                        text = dev.role,
+                                        color = Color(0xFFA78BFA),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                 }
-                            } else {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                    contentDescription = "Open ${item.title}",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                            }
+
+                            dev.channels.forEach { item ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(ShapeCorner12)
+                                        .background(Color(0xFF131722))
+                                        .border(1.dp, Color(0xFF232838), ShapeCorner12)
+                                        .clickable {
+                                            if (item.url != null) {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(item.url))
+                                                runCatching { context.startActivity(intent) }
+                                            } else if (item.discordId != null) {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                val clip = ClipData.newPlainText("Discord ID", item.discordId)
+                                                clipboard.setPrimaryClip(clip)
+                                                Toast.makeText(context, "Discord ID copied: ${item.discordId}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(ShapeCorner10)
+                                            .background(item.iconBg),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = item.icon,
+                                            contentDescription = item.title,
+                                            tint = item.iconColor,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    }
+
+                                    Spacer(Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = item.title,
+                                            color = Color.White,
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Spacer(Modifier.height(1.dp))
+                                        Text(
+                                            text = item.handle,
+                                            color = TextSecondary,
+                                            fontSize = 11.5.sp
+                                        )
+                                    }
+
+                                    if (item.discordId != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(ShapeCorner8)
+                                                .background(Color(0xFF231E38))
+                                                .border(1.dp, Color(0xFF4C3B6E), ShapeCorner8)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = "Copy Discord ID",
+                                                tint = Color(0xFFA78BFA),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                text = "Copy",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                            contentDescription = "Open ${item.title}",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -590,6 +656,12 @@ fun SettingsScreen(
         )
     }
 }
+
+private data class DeveloperMember(
+    val name: String,
+    val role: String,
+    val channels: List<ContactChannel>
+)
 
 private data class ContactChannel(
     val title: String,
