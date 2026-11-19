@@ -1,0 +1,51 @@
+# Android & Gradle
+.gradle/
+build/
+android/.gradle/
+android/app/build/
+android/.idea/
+android/local.properties
+android/app/release/
+*.apk
+*.aab
+*.ap_
+*.iml
+
+# Keystores & Signing Secrets
+*.jks
+*.keystore
+*.p12
+*.key
+*.pem
+
+# Firebase / Google Cloud credentials
+android/app/google-services.json
+!android/app/google-services.json.example
+
+# Python Caches & Virtual Envs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+backend/.pytest_cache/
+.venv/
+venv/
+env/
+*.log
+
+# System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local Tools, Scratches & Assistant Configs
+.freebuff/
+.kombai/
+.agents/
+to_add.md
+
+# Graphify (graph.json/GRAPH_REPORT.md/graph.html are committed; machine-local files ignored)
+graphify-out/.*
+graphify-out/manifest.json
+graphify-out/cost.json
+graphify-out/cache/

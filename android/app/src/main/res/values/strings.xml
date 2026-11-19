@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">Upscaler Studio</string>
+
+    <!--
+      Google Sign-In (OAuth 2.0 Web Client ID from Google Cloud Console).
+      Replace with your real Web application Client ID ending in .apps.googleusercontent.com.
+      Must match the backend GOOGLE_CLIENT_ID environment variable (audience).
+    -->
+    <string name="google_web_client_id">YOUR_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com</string>
+    <string name="google_sign_in_button">Sign in with Google</string>
+    <string name="google_sign_out_button">Sign out</string>
+    <string name="google_signed_in_as">Signed in as %1$s (%2$s)</string>
+    <string name="google_not_signed_in">Not signed in</string>
+    <string name="google_sign_in_failed">Google sign-in failed: %1$s</string>
+    <string name="google_backend_connected">Backend connected as Google user</string>
+
+    <!-- User Account Section -->
+    <string name="user_account_title">User Account</string>
+    <string name="user_account_not_signed_in">Not signed in</string>
+    <string name="user_account_signed_in_as">Signed in as</string>
+    <string name="user_account_provider">Account provider</string>
+    <string name="user_account_provider_google">Google</string>
+    <string name="user_account_provider_session">Session (legacy)</string>
+    <string name="user_account_sign_in_button">Sign in with Google</string>
+    <string name="user_account_sign_out_button">Sign out of Google</string>
+    <string name="user_account_backend_url">Backend URL</string>
+    <string name="user_account_session_token">Session token</string>
+    <string name="user_account_copy_token">Copy token</string>
+    <string name="user_account_token_copied">Token copied to clipboard</string>
+    <string name="user_account_manage_sign_in">Manage your Upscaler Studio sign-in</string>
+</resources>
+

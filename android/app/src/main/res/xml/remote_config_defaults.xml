@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<defaultsMap>
+    <entry>
+        <key>min_version_code</key>
+        <value>1</value>
+    </entry>
+    <entry>
+        <key>min_version_name</key>
+        <value>1.0.0</value>
+    </entry>
+    <entry>
+        <key>latest_version_code</key>
+        <value>1</value>
+    </entry>
+    <entry>
+        <key>latest_version_name</key>
+        <value>1.0.0</value>
+    </entry>
+    <entry>
+        <key>force_update_title</key>
+        <value>Update Required</value>
+    </entry>
+    <entry>
+        <key>force_update_message</key>
+        <value>A new version of Upscaler Studio is available. Please update to continue using the app.</value>
+    </entry>
+    <entry>
+        <key>update_url</key>
+        <value>https://github.com/rynn-ui/upscaler-studio/releases</value>
+    </entry>
+    <entry>
+        <key>is_maintenance_mode</key>
+        <value>false</value>
+    </entry>
+    <entry>
+        <key>maintenance_message</key>
+        <value>Upscaler Studio is currently undergoing scheduled maintenance. Please check back shortly.</value>
+    </entry>
+    <entry>
+        <key>colab_notebook_url</key>
+        <value>https://colab.research.google.com/drive/1i1WCx7EPUrMkc-jjME60AMMRDrw8XvkX</value>
+    </entry>
+</defaultsMap>
+

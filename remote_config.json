@@ -1,0 +1,61 @@
+{
+  "conditions": [],
+  "parameters": {
+    "min_version_code": {
+      "defaultValue": {
+        "value": "1"
+      },
+      "description": "Minimum Android versionCode required. If app versionCode is lower, force update dialog blocks access."
+    },
+    "min_version_name": {
+      "defaultValue": {
+        "value": "1.0.0"
+      },
+      "description": "Minimum required version name string."
+    },
+    "latest_version_code": {
+      "defaultValue": {
+        "value": "1"
+      },
+      "description": "Latest published version code. Triggers optional update notice when higher than user version."
+    },
+    "latest_version_name": {
+      "defaultValue": {
+        "value": "1.0.0"
+      },
+      "description": "Latest published version name."
+    },
+    "force_update_title": {
+      "defaultValue": {
+        "value": "Update Required"
+      },
+      "description": "Title of the force update modal."
+    },
+    "force_update_message": {
+      "defaultValue": {
+        "value": "A new version of Upscaler Studio is available. Please update to continue using the app."
+      },
+      "description": "Message displayed when an update is forced."
+    },
+    "update_url": {
+      "defaultValue": {
+        "value": "https://github.com/rynn-ui/upscaler-studio/releases"
+      },
+      "description": "Direct download or release page URL."
+    },
+    "is_maintenance_mode": {
+      "defaultValue": {
+        "value": "false"
+      },
+      "description": "Set to true to show a temporary maintenance block."
+    },
+    "maintenance_message": {
+      "defaultValue": {
+        "value": "Upscaler Studio is currently undergoing scheduled maintenance. Please check back shortly."
+      },
+      "description": "Message shown during maintenance."
+    }
+  },
+  "parameterGroups": {}
+}
+
