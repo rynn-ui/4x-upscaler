@@ -1253,29 +1253,13 @@ private fun HomeTabContent(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            ColabSwitcherBar(
+            ConnectionHeroCard(
                 selectedTarget = selectedColabTarget,
                 onSelectTarget = onSelectColabTarget,
+                useDedicatedVideoGen = useDedicatedVideoGen,
+                onToggleDedicatedVideoGen = onToggleDedicatedVideoGen,
                 primaryConnected = primaryConnectionState is ConnectionState.Connected,
                 videoGenConnected = if (useDedicatedVideoGen) videoGenConnectionState is ConnectionState.Connected else primaryConnectionState is ConnectionState.Connected,
-                useDedicatedVideoGen = useDedicatedVideoGen
-            )
-        }
-
-        if (selectedColabTarget == ColabTarget.VIDEOGEN) {
-            item {
-                DedicatedColabModeCard(
-                    useDedicated = useDedicatedVideoGen,
-                    onToggle = onToggleDedicatedVideoGen,
-                    primaryBaseUrl = primaryBaseUrl,
-                    isPrimaryConnected = primaryConnectionState is ConnectionState.Connected
-                )
-            }
-        }
-
-        item {
-            ConnectionHeroCard(
-                target = selectedColabTarget,
                 connectionState = activeState,
                 isSharedFallback = isSharedFallback,
                 sharedHost = primaryBaseUrl,
@@ -1425,225 +1409,13 @@ private fun HomeTabContent(
 }
 
 @Composable
-private fun ColabSwitcherBar(
+private fun ConnectionHeroCard(
     selectedTarget: ColabTarget,
     onSelectTarget: (ColabTarget) -> Unit,
+    useDedicatedVideoGen: Boolean,
+    onToggleDedicatedVideoGen: (Boolean) -> Unit,
     primaryConnected: Boolean,
     videoGenConnected: Boolean,
-    useDedicatedVideoGen: Boolean
-) {
-    val haptic = LocalHapticFeedback.current
-    Surface(
-        color = DarkSurface,
-        shape = ShapeCorner16,
-        border = BorderStroke(1.dp, DarkCardBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Enhancement Colab Tab
-            val isPrimary = selectedTarget == ColabTarget.PRIMARY
-            val primaryInteraction = remember { MutableInteractionSource() }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(ShapeCorner12)
-                    .background(if (isPrimary) Color(0xFF132A1F) else Color.Transparent)
-                    .border(
-                        1.dp,
-                        if (isPrimary) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
-                        ShapeCorner12
-                    )
-                    .clickable(
-                        interactionSource = primaryInteraction,
-                        indication = null
-                    ) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSelectTarget(ColabTarget.PRIMARY)
-                    }
-                    .padding(vertical = 10.dp, horizontal = 10.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (primaryConnected) StatusOnlineGreen else StatusOfflineRed)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "Enhancement",
-                            color = if (isPrimary) Color.White else TextSecondary,
-                            fontSize = 13.5.sp,
-                            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
-                        )
-                        Text(
-                            text = "2X · RIFE · Depth",
-                            color = if (isPrimary) GreenIconTint else TextMuted,
-                            fontSize = 10.5.sp
-                        )
-                    }
-                }
-            }
-
-            // Video Gen Colab Tab
-            val isVideoGen = selectedTarget == ColabTarget.VIDEOGEN
-            val videoGenInteraction = remember { MutableInteractionSource() }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(ShapeCorner12)
-                    .background(if (isVideoGen) Color(0xFF132A1F) else Color.Transparent)
-                    .border(
-                        1.dp,
-                        if (isVideoGen) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
-                        ShapeCorner12
-                    )
-                    .clickable(
-                        interactionSource = videoGenInteraction,
-                        indication = null
-                    ) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        onSelectTarget(ColabTarget.VIDEOGEN)
-                    }
-                    .padding(vertical = 10.dp, horizontal = 10.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(if (videoGenConnected) StatusOnlineGreen else StatusOfflineRed)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = "Video Gen",
-                            color = if (isVideoGen) Color.White else TextSecondary,
-                            fontSize = 13.5.sp,
-                            fontWeight = if (isVideoGen) FontWeight.Bold else FontWeight.Medium
-                        )
-                        Text(
-                            text = if (useDedicatedVideoGen) "Dedicated Server" else "Shared Mode",
-                            color = if (isVideoGen) GreenIconTint else TextMuted,
-                            fontSize = 10.5.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DedicatedColabModeCard(
-    useDedicated: Boolean,
-    onToggle: (Boolean) -> Unit,
-    primaryBaseUrl: String,
-    isPrimaryConnected: Boolean
-) {
-    Surface(
-        color = Color(0xFF131520),
-        shape = ShapeCorner14,
-        border = BorderStroke(1.dp, DarkCardBorder),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Dns,
-                        contentDescription = null,
-                        tint = if (useDedicated) GreenIconTint else TextSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Use Dedicated Video Colab",
-                            color = Color.White,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = if (useDedicated)
-                                "Separate GPU server for Wan 2.1/2.2 diffusion"
-                            else
-                                "Sharing Enhancement Colab (Single Server Mode)",
-                            color = TextSecondary,
-                            fontSize = 11.5.sp
-                        )
-                    }
-                }
-                Switch(
-                    checked = useDedicated,
-                    onCheckedChange = onToggle,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = GreenPrimary,
-                        uncheckedThumbColor = TextSecondary,
-                        uncheckedTrackColor = Color(0xFF1E2235)
-                    )
-                )
-            }
-            if (!useDedicated) {
-                Spacer(Modifier.height(8.dp))
-                Surface(
-                    color = Color(0xFF0D1E16),
-                    shape = ShapeCorner8,
-                    border = BorderStroke(1.dp, Color(0xFF1B4D36)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (isPrimaryConnected) Icons.Default.CheckCircle else Icons.Default.Info,
-                            contentDescription = null,
-                            tint = if (isPrimaryConnected) StatusOnlineGreen else StatusWarningAmber,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        val cleanDisplay = if (primaryBaseUrl.length > 28) primaryBaseUrl.take(28) + "..." else primaryBaseUrl
-                        Text(
-                            text = if (isPrimaryConnected)
-                                "Linked to primary: $cleanDisplay"
-                            else
-                                "Primary Colab is offline. Connect primary or enable Dedicated Colab.",
-                            color = if (isPrimaryConnected) GreenIconTint else StatusWarningAmber,
-                            fontSize = 11.5.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConnectionHeroCard(
-    target: ColabTarget = ColabTarget.PRIMARY,
     connectionState: ConnectionState,
     isSharedFallback: Boolean = false,
     sharedHost: String = "",
@@ -1661,7 +1433,7 @@ private fun ConnectionHeroCard(
         is ConnectionState.Disconnected -> StatusOfflineRed
     }
     val statusHeading = when {
-        target == ColabTarget.VIDEOGEN && isSharedFallback -> {
+        selectedTarget == ColabTarget.VIDEOGEN && isSharedFallback -> {
             when (connectionState) {
                 is ConnectionState.Connected -> "Shared Backend: Wan Ready"
                 is ConnectionState.Connecting -> "Checking Shared Colab..."
@@ -1669,7 +1441,7 @@ private fun ConnectionHeroCard(
                 is ConnectionState.Disconnected -> "Shared Backend Offline"
             }
         }
-        target == ColabTarget.VIDEOGEN -> {
+        selectedTarget == ColabTarget.VIDEOGEN -> {
             when (connectionState) {
                 is ConnectionState.Connected -> "Video Gen Online"
                 is ConnectionState.Connecting -> "Connecting to Video Gen..."
@@ -1687,7 +1459,7 @@ private fun ConnectionHeroCard(
         }
     }
     val statusSub = when {
-        target == ColabTarget.VIDEOGEN && isSharedFallback -> {
+        selectedTarget == ColabTarget.VIDEOGEN && isSharedFallback -> {
             when (connectionState) {
                 is ConnectionState.Connected -> {
                     val g = connectionState.health.gpu
@@ -1704,7 +1476,7 @@ private fun ConnectionHeroCard(
             is ConnectionState.Connecting -> "Checking health & capabilities at ${connectionState.baseUrl}"
             is ConnectionState.Failed -> connectionState.message
             is ConnectionState.Disconnected ->
-                if (target == ColabTarget.VIDEOGEN) "Start the 1-click Video Gen Colab notebook, then paste URL or scan QR."
+                if (selectedTarget == ColabTarget.VIDEOGEN) "Start the 1-click Video Gen Colab notebook, then paste URL or scan QR."
                 else "Start the 1-click Colab notebook, then tap the app link, scan QR, or paste URL."
         }
     }
@@ -1715,9 +1487,156 @@ private fun ConnectionHeroCard(
             .clip(ShapeCorner20)
             .background(DarkSurface)
             .border(1.dp, DarkCardBorder, ShapeCorner20)
-            .padding(18.dp)
+            .padding(16.dp)
     ) {
         Column {
+            // === DIRECT COLAB SWITCHER TOGGLE AT TOP OF HERO CARD ===
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(ShapeCorner12)
+                    .background(Color(0xFF131625))
+                    .border(1.dp, Color(0xFF23273A), ShapeCorner12)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Enhancement Tab
+                val isPrimary = selectedTarget == ColabTarget.PRIMARY
+                val primaryInteraction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(ShapeCorner10)
+                        .background(if (isPrimary) GreenPillBg else Color.Transparent)
+                        .border(
+                            1.dp,
+                            if (isPrimary) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
+                            ShapeCorner10
+                        )
+                        .clickable(
+                            interactionSource = primaryInteraction,
+                            indication = null
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelectTarget(ColabTarget.PRIMARY)
+                        }
+                        .padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (primaryConnected) StatusOnlineGreen else StatusOfflineRed)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "⚡ Enhancement",
+                            color = if (isPrimary) Color.White else TextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Video Gen Tab
+                val isVideoGen = selectedTarget == ColabTarget.VIDEOGEN
+                val videoGenInteraction = remember { MutableInteractionSource() }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(ShapeCorner10)
+                        .background(if (isVideoGen) GreenPillBg else Color.Transparent)
+                        .border(
+                            1.dp,
+                            if (isVideoGen) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
+                            ShapeCorner10
+                        )
+                        .clickable(
+                            interactionSource = videoGenInteraction,
+                            indication = null
+                        ) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelectTarget(ColabTarget.VIDEOGEN)
+                        }
+                        .padding(vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (videoGenConnected) StatusOnlineGreen else StatusOfflineRed)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "🎬 Video Gen",
+                            color = if (isVideoGen) Color.White else TextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = if (isVideoGen) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            // Dedicated mode option when Video Gen is selected
+            if (selectedTarget == ColabTarget.VIDEOGEN) {
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = Color(0xFF101320),
+                    shape = ShapeCorner10,
+                    border = BorderStroke(1.dp, Color(0xFF1E2335)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = Icons.Default.Dns,
+                                contentDescription = null,
+                                tint = if (useDedicatedVideoGen) GreenIconTint else TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = if (useDedicatedVideoGen) "Dedicated Video Gen GPU" else "Shared Mode (Using Enhancement Colab)",
+                                color = if (useDedicatedVideoGen) Color.White else TextSecondary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Switch(
+                            checked = useDedicatedVideoGen,
+                            onCheckedChange = onToggleDedicatedVideoGen,
+                            modifier = Modifier.scale(0.8f),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = GreenPrimary,
+                                uncheckedThumbColor = TextSecondary,
+                                uncheckedTrackColor = Color(0xFF1E2235)
+                            )
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = Color(0xFF1E2233), thickness = 1.dp)
+            Spacer(Modifier.height(14.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1902,7 +1821,7 @@ private fun ConnectionHeroCard(
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (target == ColabTarget.VIDEOGEN) "Open Video Colab" else "Open Colab",
+                            text = if (selectedTarget == ColabTarget.VIDEOGEN) "Open Video Colab" else "Open Colab",
                             color = Color.White,
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,
