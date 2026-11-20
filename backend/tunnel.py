@@ -5,6 +5,7 @@ import platform
 import re
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -109,6 +110,49 @@ def start_cloudflared_tunnel(port: int = 8000) -> Optional[str]:
         print(f"⚠️ Cloudflare tunnel error: {e}")
 
     return None
+
+
+def start_ngrok_tunnel(port: int = 8000, authtoken: Optional[str] = None) -> Optional[str]:
+    """Start high-stability Ngrok tunnel (no 100MB body limit, persistent edge connection)."""
+    token = (authtoken or os.environ.get("NGROK_AUTHTOKEN") or "").strip()
+    if not token:
+        return None
+
+    try:
+        try:
+            import pyngrok.ngrok as ngrok
+        except ImportError:
+            print("📥 Installing pyngrok for stable high-performance tunnel...")
+            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "pyngrok"], check=True)
+            import pyngrok.ngrok as ngrok
+
+        ngrok.set_auth_token(token)
+        try:
+            ngrok.disconnect()
+        except Exception:
+            pass
+
+        tunnel = ngrok.connect(port, "http")
+        url = tunnel.public_url
+        if url:
+            if url.startswith("http://"):
+                url = "https://" + url[7:]
+            print(f"✅ Connected to Ngrok tunnel: {url}")
+            return url.strip()
+    except Exception as e:
+        print(f"⚠️ Ngrok tunnel failed ({e}), falling back to Cloudflare...")
+
+    return None
+
+
+def start_best_tunnel(port: int = 8000, ngrok_token: Optional[str] = None) -> Optional[str]:
+    """Attempts Ngrok first if a token is configured; otherwise uses Cloudflare tunnel."""
+    token = (ngrok_token or os.environ.get("NGROK_AUTHTOKEN") or "").strip()
+    if token:
+        url = start_ngrok_tunnel(port, authtoken=token)
+        if url:
+            return url
+    return start_cloudflared_tunnel(port)
 
 
 def build_pairing_deep_link(public_url: str, auth_token: Optional[str] = None) -> str:

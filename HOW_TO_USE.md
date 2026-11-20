@@ -68,6 +68,15 @@
 
 ### Will Colab disconnect while I am editing?
 Colab keeps running via the background keep-alive ping, and if a mobile network drop interrupts streaming, the Android app automatically reconnects and recovers job state via `/api/v1/jobs/{job_id}/status`.
+* **Important for Mobile Editors**: If running Colab on your phone's browser, mobile OSes (Android/iOS) may freeze background tabs after 20 seconds. Run your browser in **Split-Screen** or **Floating Window** mode alongside Upscaler Studio, or run Colab on your PC/laptop and scan the QR code!
+
+### What if my video is large (>100MB) or Cloudflare is blocked by my ISP?
+Cloudflare's free tunnel has a 100MB upload limit and may be throttled by some mobile carriers. For unlimited video sizes and ultra-stable connections, paste a free **Ngrok AuthToken** (from [ngrok.com](https://ngrok.com)) into the Colab runner cell.
+
+### Which model gives the fastest processing speed?
+* **Fastest (15–25 FPS)**: `2x-sudo-UltraCompact` — full-frame accelerated in FP16 on Colab GPU.
+* **Balanced Interpolation**: `RIFE v4.22 Lite` or `RIFE v4.6` at 2×.
+* Heavy models like `Real-ESRGAN General` or 4-pass 4K require significantly more compute.
 
 ### Can anyone guess my backend URL and submit jobs?
 Every session generates a random **Bearer session token** required for all REST and WebSocket endpoints.

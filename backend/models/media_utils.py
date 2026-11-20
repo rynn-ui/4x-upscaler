@@ -124,7 +124,15 @@ def encode_preview_b64(frame_bgr: np.ndarray, preview_width: int = 240) -> Optio
     return base64.b64encode(buf).decode("utf-8")
 
 
-def emit_progress(job, frame_idx: int, total_frames: int, start_time: float, preview_frame: np.ndarray) -> None:
+def emit_progress(
+    job,
+    frame_idx: int,
+    total_frames: int,
+    start_time: float,
+    preview_frame: Optional[np.ndarray] = None,
+    last_preview_time: float = 0.0,
+    preview_interval_sec: float = 1.0,
+) -> float:
     elapsed = max(0.05, time.time() - start_time)
     curr_fps = frame_idx / elapsed
     if total_frames > 0:
@@ -134,7 +142,23 @@ def emit_progress(job, frame_idx: int, total_frames: int, start_time: float, pre
     else:
         eta = 0.0
         pct = 0.0
-    job.update_progress(pct, frame_idx, total_frames, curr_fps, eta, encode_preview_b64(preview_frame))
+
+    b64: Optional[str] = None
+    now = time.time()
+    should_gen = (
+        preview_frame is not None
+        and (
+            frame_idx == 1
+            or (total_frames > 0 and frame_idx == total_frames)
+            or (now - last_preview_time >= preview_interval_sec)
+        )
+    )
+    if should_gen:
+        b64 = encode_preview_b64(preview_frame)
+        last_preview_time = now
+
+    job.update_progress(pct, frame_idx, total_frames, curr_fps, eta, b64)
+    return last_preview_time
 
 
 def verify_video_output(path: Path) -> bool:
@@ -203,43 +227,63 @@ def finalize_video_export(
             return res.returncode, (res.stderr or "")
         return _run_monitored_ffmpeg(cmd, job=job)
 
+    # Hardware NVENC acceleration on GPU runtimes (Colab T4), fast libx264 fallback on CPU
+    video_encoders: List[List[str]] = []
+    if torch.cuda.is_available():
+        video_encoders.append(["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20", "-pix_fmt", "yuv420p"])
+    video_encoders.append(["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p"])
+
     try:
-        if preserve_audio:
-            cmd_copy = base_cmd + [
-                "-i", input_path,
-                "-map", "0:v:0", "-map", "1:a:0?",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                "-c:a", "copy", "-shortest",
-                str(final_out),
-            ]
-            ret_code, stderr = _execute(cmd_copy)
-            if ret_code != 0:
-                # Explicit AAC transcode fallback when source container audio (e.g. Opus/Vorbis/PCM) cannot be copied into MP4
-                cmd_aac = base_cmd + [
+        success = False
+        last_stderr = ""
+        last_ret_code = -1
+
+        for v_enc in video_encoders:
+            if preserve_audio:
+                cmd_copy = base_cmd + [
                     "-i", input_path,
                     "-map", "0:v:0", "-map", "1:a:0?",
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                ] + v_enc + [
                     "-movflags", "+faststart",
-                    "-c:a", "aac", "-b:a", "192k", "-shortest",
+                    "-c:a", "copy", "-shortest",
                     str(final_out),
                 ]
-                ret_code, stderr = _execute(cmd_aac)
-        else:
-            cmd_noaudio = base_cmd + [
-                "-map", "0:v:0", "-an",
-                "-c:v", "libx264", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                str(final_out),
-            ]
-            ret_code, stderr = _execute(cmd_noaudio)
+                ret_code, stderr = _execute(cmd_copy)
+                if ret_code != 0:
+                    # Explicit AAC transcode fallback when source container audio (e.g. Opus/Vorbis/PCM) cannot be copied into MP4
+                    cmd_aac = base_cmd + [
+                        "-i", input_path,
+                        "-map", "0:v:0", "-map", "1:a:0?",
+                    ] + v_enc + [
+                        "-movflags", "+faststart",
+                        "-c:a", "aac", "-b:a", "192k", "-shortest",
+                        str(final_out),
+                    ]
+                    ret_code, stderr = _execute(cmd_aac)
+            else:
+                cmd_noaudio = base_cmd + [
+                    "-map", "0:v:0", "-an",
+                ] + v_enc + [
+                    "-movflags", "+faststart",
+                    str(final_out),
+                ]
+                ret_code, stderr = _execute(cmd_noaudio)
 
-        if ret_code != 0:
-            stderr_tail = stderr.strip()[-400:]
-            raise RuntimeError(f"FFmpeg muxing failed (exit {ret_code}): {stderr_tail}")
+            if ret_code == 0 and verify_video_output(final_out):
+                success = True
+                break
+            else:
+                last_ret_code = ret_code
+                last_stderr = stderr
+                if final_out.exists():
+                    try:
+                        final_out.unlink()
+                    except OSError:
+                        pass
 
-        if not verify_video_output(final_out):
-            raise RuntimeError("Final exported video failed integrity verification.")
+        if not success:
+            stderr_tail = last_stderr.strip()[-400:]
+            raise RuntimeError(f"FFmpeg muxing failed (exit {last_ret_code}): {stderr_tail}")
 
         try:
             if raw_out.exists():

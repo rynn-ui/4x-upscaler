@@ -3,20 +3,31 @@ package com.upscaler.studio.ui.components
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -33,6 +44,7 @@ import com.upscaler.studio.ui.theme.GreenIconTint
 import com.upscaler.studio.ui.theme.GreenPrimary
 import com.upscaler.studio.ui.theme.ShapeCorner10
 import com.upscaler.studio.ui.theme.ShapeCorner12
+import com.upscaler.studio.ui.theme.ShapeCorner14
 import com.upscaler.studio.ui.theme.ShapeCorner18
 import com.upscaler.studio.ui.theme.ShapeCorner4
 import com.upscaler.studio.ui.theme.StatusOfflineRed
@@ -58,13 +70,15 @@ fun LiveProgressCard(
     }
 
     val isPaused = job.phase == JobPhase.PAUSED
-    val isIndeterminate = job.phase in setOf(
-        JobPhase.PREPARING,
-        JobPhase.UPLOADING,
-        JobPhase.QUEUED,
-        JobPhase.DOWNLOADING,
-        JobPhase.RECONNECTING
-    ) || job.totalFrames <= 0
+    val isUploading = job.phase == JobPhase.PREPARING || job.phase == JobPhase.UPLOADING
+    val isDownloading = job.phase == JobPhase.DOWNLOADING
+
+    val isIndeterminate = when (job.phase) {
+        JobPhase.PREPARING, JobPhase.UPLOADING, JobPhase.QUEUED, JobPhase.RECONNECTING -> true
+        JobPhase.DOWNLOADING -> job.progress <= 0f || job.progress >= 100f
+        JobPhase.PROCESSING -> job.totalFrames <= 0
+        else -> false
+    }
 
     val clampedPct = job.progress.coerceIn(0f, 100f)
     val badgeColor = when (job.phase) {
@@ -72,6 +86,14 @@ fun LiveProgressCard(
         JobPhase.FAILED -> StatusOfflineRed
         JobPhase.SAVED -> StatusOnlineGreen
         else -> GreenIconTint
+    }
+
+    val phaseTitle = when (job.phase) {
+        JobPhase.PREPARING -> "Preparing Video"
+        JobPhase.UPLOADING -> "Uploading to GPU"
+        JobPhase.DOWNLOADING -> "Saving to Gallery"
+        JobPhase.SAVED -> "Saved to Gallery"
+        else -> job.phase.label
     }
 
     val etaFormatted = remember(job.etaSeconds) {
@@ -93,7 +115,7 @@ fun LiveProgressCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = job.phase.label,
+                    text = phaseTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = badgeColor
@@ -108,13 +130,22 @@ fun LiveProgressCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            // Dedicated Loading Animations for Upload & Gallery Save
+            if (isUploading) {
+                UploadAnimationBlock(job = job)
+                Spacer(modifier = Modifier.height(12.dp))
+            } else if (isDownloading) {
+                SaveGalleryAnimationBlock(job = job)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             if (isIndeterminate) {
                 LinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(8.dp)
                         .clip(ShapeCorner4)
-                        .semantics { contentDescription = "${job.phase.label} progress" },
+                        .semantics { contentDescription = "$phaseTitle progress" },
                     color = GreenPrimary,
                     trackColor = Color(0xFF132A1F)
                 )
@@ -137,10 +168,11 @@ fun LiveProgressCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                val frameLabel = if (job.totalFrames > 0) {
-                    "Frame ${job.currentFrame}/${job.totalFrames}"
-                } else {
-                    job.paramsSummary.ifBlank { "Working..." }
+                val frameLabel = when {
+                    job.phase == JobPhase.PROCESSING && job.totalFrames > 0 -> "Frame ${job.currentFrame}/${job.totalFrames}"
+                    isUploading -> "Sending video to Colab server"
+                    isDownloading -> "Exporting to Movies/UpscalerStudio"
+                    else -> job.paramsSummary.ifBlank { "Working..." }
                 }
                 Text(
                     text = frameLabel,
@@ -185,15 +217,14 @@ fun LiveProgressCard(
                 )
             }
 
-            if (job.phase.isActive && job.phase != JobPhase.DOWNLOADING) {
+            if (job.phase.isActive && !isDownloading) {
                 Spacer(modifier = Modifier.height(14.dp))
 
                 val canPauseResume = !job.controlInFlight &&
                     job.serverJobId != null &&
                     (job.phase == JobPhase.PROCESSING || job.phase == JobPhase.PAUSED || job.phase == JobPhase.QUEUED)
 
-                val canCancel = !job.controlInFlight &&
-                    job.phase != JobPhase.DOWNLOADING
+                val canCancel = !job.controlInFlight && !isDownloading
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -245,6 +276,190 @@ fun LiveProgressCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun UploadAnimationBlock(job: ManagedJob) {
+    val infiniteTransition = rememberInfiniteTransition(label = "uploadPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "uploadScale"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "uploadGlow"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ShapeCorner14)
+            .background(Color(0xFF0D2117))
+            .border(1.dp, GreenPrimary.copy(alpha = glowAlpha), ShapeCorner14)
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .scale(pulseScale)
+                        .clip(ShapeCorner12)
+                        .background(Color(0xFF143825)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "Uploading to GPU",
+                        tint = GreenIconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (job.phase == JobPhase.PREPARING) "Preparing Video for Transfer..." else "Uploading to Colab GPU...",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (job.paramsSummary.isNotBlank() && job.paramsSummary.contains("MB", ignoreCase = true)) {
+                            job.paramsSummary
+                        } else {
+                            "Transferring file over secure tunnel..."
+                        },
+                        color = TextSecondary,
+                        fontSize = 11.5.sp
+                    )
+                }
+
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = GreenPrimary,
+                    trackColor = Color(0xFF143825),
+                    strokeWidth = 2.5.dp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "⚡ Please keep app open — AI processing begins automatically after upload completes.",
+                color = Color(0xFF81C784),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+private fun SaveGalleryAnimationBlock(job: ManagedJob) {
+    val infiniteTransition = rememberInfiniteTransition(label = "savePulse")
+    val bounceScale by infiniteTransition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "saveBounce"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "saveGlow"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ShapeCorner14)
+            .background(Color(0xFF0D2117))
+            .border(1.dp, GreenPrimary.copy(alpha = glowAlpha), ShapeCorner14)
+            .padding(12.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .scale(bounceScale)
+                        .clip(ShapeCorner12)
+                        .background(Color(0xFF143825)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = "Saving to Gallery",
+                        tint = GreenIconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Saving to Phone Gallery...",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (job.paramsSummary.isNotBlank() && (job.paramsSummary.contains("Downloading", ignoreCase = true) || job.paramsSummary.contains("Saving", ignoreCase = true))) {
+                            job.paramsSummary
+                        } else {
+                            "Transferring finished video to Movies/UpscalerStudio..."
+                        },
+                        color = TextSecondary,
+                        fontSize = 11.5.sp
+                    )
+                }
+
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    color = GreenPrimary,
+                    trackColor = Color(0xFF143825),
+                    strokeWidth = 2.5.dp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "🎬 Exporting to Movies/UpscalerStudio. Comparison player will open automatically!",
+                color = Color(0xFF81C784),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

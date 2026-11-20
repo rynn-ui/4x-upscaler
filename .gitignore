@@ -42,6 +42,9 @@ Thumbs.db
 .freebuff/
 .kombai/
 .agents/
+.archify/
+archify-out/
+skills-lock.json
 to_add.md
 
 # Graphify (graph.json/GRAPH_REPORT.md/graph.html are committed; machine-local files ignored)

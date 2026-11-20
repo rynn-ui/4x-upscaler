@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -581,4 +582,51 @@ def test_health_telemetry_includes_backend_instance_and_upload_count(auth_header
     assert len(data["backend_instance_id"]) > 0
     assert "active_uploads" in data
     assert data["active_uploads"] == 0
+
+
+def test_emit_progress_preview_throttling():
+    from models.media_utils import emit_progress
+    job = TaskJob("j_thumb", "upscale", "/tmp/dummy.mp4", {})
+    synth_frame = np.zeros((64, 64, 3), dtype=np.uint8)
+
+    t0 = time.time()
+    # Frame 1: must generate preview
+    last_t = emit_progress(job, 1, 10, t0, synth_frame, last_preview_time=0.0, preview_interval_sec=1.0)
+    assert job.preview_b64 is not None
+    orig_b64 = job.preview_b64
+
+    # Frame 2 immediately after: should NOT regenerate preview (returns None in event, keeps existing)
+    job.preview_b64 = "sentinel"
+    emit_progress(job, 2, 10, t0, synth_frame, last_preview_time=last_t, preview_interval_sec=1.0)
+    assert job.preview_b64 == "sentinel"
+    assert job.current_frame == 2
+
+
+def test_finalize_video_export_creates_valid_video(tmp_path):
+    raw_vid = _make_synthetic_video(tmp_path / "raw_valid.mp4", frames=3)
+    final_vid = tmp_path / "final_valid.mp4"
+
+    res = finalize_video_export(raw_vid, str(raw_vid), final_vid, preserve_audio=False)
+    assert res.exists()
+    assert res.stat().st_size > 500
+
+
+def test_start_best_tunnel_routing():
+    from tunnel import start_best_tunnel
+
+    with mock.patch("tunnel.start_ngrok_tunnel", return_value="https://test.ngrok-free.app") as mock_ngrok:
+        with mock.patch("tunnel.start_cloudflared_tunnel", return_value="https://test.trycloudflare.com") as mock_cf:
+            # 1. With ngrok token: routes to ngrok
+            url1 = start_best_tunnel(8000, ngrok_token="dummy_token_123")
+            assert url1 == "https://test.ngrok-free.app"
+            mock_ngrok.assert_called_once_with(8000, authtoken="dummy_token_123")
+            mock_cf.assert_not_called()
+
+            # 2. Without ngrok token: routes to cloudflare
+            mock_ngrok.reset_mock()
+            mock_cf.reset_mock()
+            url2 = start_best_tunnel(8000, ngrok_token="")
+            assert url2 == "https://test.trycloudflare.com"
+            mock_cf.assert_called_once_with(8000)
+
 

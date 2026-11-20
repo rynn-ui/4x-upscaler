@@ -174,9 +174,9 @@ class UpscalerRepository private constructor() {
             chain.proceed(builder.build())
         }
         return OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .writeTimeout(180, TimeUnit.SECONDS)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)
+            .writeTimeout(300, TimeUnit.SECONDS)
             .addInterceptor(authInterceptor)
             .build()
     }
@@ -453,12 +453,27 @@ class UpscalerRepository private constructor() {
                     throw IllegalStateException("Selected video could not be read or is empty.")
                 }
 
+                val fileLenMb = tempUploadFile.length() / (1024 * 1024)
+                if (fileLenMb >= 95 && conn.baseUrl.contains("trycloudflare.com", ignoreCase = true)) {
+                    throw IllegalStateException(
+                        "Video is ${fileLenMb}MB, which exceeds Cloudflare tunnel's 100MB limit. " +
+                        "Please trim the video or run Colab with an Ngrok token for unlimited upload sizes."
+                    )
+                }
+
                 val preUpload = _jobs.value[localId]
                 if (preUpload == null || preUpload.cancellationRequested || preUpload.phase == JobPhase.CANCELLED) {
                     return@launch
                 }
 
-                mutateJob(localId) { it.copy(phase = JobPhase.UPLOADING, errorMessage = null) }
+                val fileLenFormatted = if (fileLenMb > 0) "${fileLenMb}MB" else "${tempUploadFile.length() / 1024}KB"
+                mutateJob(localId) {
+                    it.copy(
+                        phase = JobPhase.UPLOADING,
+                        paramsSummary = "Uploading $fileLenFormatted to GPU...",
+                        errorMessage = null
+                    )
+                }
 
                 val requestFile = tempUploadFile.asRequestBody("application/octet-stream".toMediaType())
                 val filePart = MultipartBody.Part.createFormData("file", displayName, requestFile)
@@ -606,7 +621,7 @@ class UpscalerRepository private constructor() {
                 }
 
                 // Exponential backoff on WebSocket disconnect before HTTP status recovery
-                val backoffMs = (1500L * (1 shl (consecutiveDisconnects - 1).coerceAtMost(3))).coerceIn(1500L, 8000L)
+                val backoffMs = (2000L * (1 shl (consecutiveDisconnects - 1).coerceAtMost(3))).coerceIn(2000L, 8000L)
                 delay(backoffMs)
 
                 val recoveredStatus = try {
@@ -621,7 +636,8 @@ class UpscalerRepository private constructor() {
                     if (handledTerminal) break
                 }
 
-                if (consecutiveDisconnects >= 6) {
+                // Allow up to 20 consecutive status polling attempts (~2-3 mins of disconnection) before declaring failure
+                if (consecutiveDisconnects >= 20) {
                     mutateJob(localId) {
                         it.copy(
                             phase = JobPhase.FAILED,
@@ -751,8 +767,21 @@ class UpscalerRepository private constructor() {
             }
             return
         }
-        val result = downloadToInternalStorage(ctx, service, serverJobId, fileName)
+        mutateJob(localId) {
+            it.copy(paramsSummary = "Downloading finished video from GPU...")
+        }
+        val result = downloadToInternalStorage(ctx, service, serverJobId, fileName) { pct, statusText ->
+            mutateJob(localId) {
+                it.copy(
+                    progress = pct,
+                    paramsSummary = statusText
+                )
+            }
+        }
         result.onSuccess { internalUri ->
+            mutateJob(localId) {
+                it.copy(paramsSummary = "Saving to Gallery (Movies/UpscalerStudio)...")
+            }
             // Automatically save to the device Gallery (Movies/UpscalerStudio)
             val galleryRes = runCatching { saveVideoToGallery(ctx, internalUri, fileName) }.getOrNull()
             val finalUri = galleryRes?.getOrNull() ?: internalUri
@@ -854,7 +883,8 @@ class UpscalerRepository private constructor() {
         context: Context,
         service: UpscalerApiService,
         jobId: String,
-        fileName: String
+        fileName: String,
+        onProgress: ((Float, String) -> Unit)? = null
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val response = service.downloadOutput(jobId)
@@ -869,10 +899,36 @@ class UpscalerRepository private constructor() {
             val outputsDir = File(context.filesDir, "outputs").apply { mkdirs() }
             val destFile = File(outputsDir, fileName)
 
+            val totalBytes = body.contentLength()
             var written = 0L
+            val buffer = ByteArray(64 * 1024)
+            var lastEmitTime = 0L
+
             body.byteStream().use { input ->
                 FileOutputStream(destFile).use { out ->
-                    written = input.copyTo(out)
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        out.write(buffer, 0, bytesRead)
+                        written += bytesRead
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmitTime >= 200L) {
+                            lastEmitTime = now
+                            val writtenMb = written.toFloat() / (1024 * 1024)
+                            val text = if (totalBytes > 0L) {
+                                val totalMb = totalBytes.toFloat() / (1024 * 1024)
+                                "Downloading: %.1f / %.1f MB".format(writtenMb, totalMb)
+                            } else {
+                                "Downloading: %.1f MB".format(writtenMb)
+                            }
+                            val pct = if (totalBytes > 0L) {
+                                (written.toFloat() / totalBytes * 100f).coerceIn(0f, 99f)
+                            } else {
+                                100f
+                            }
+                            onProgress?.invoke(pct, text)
+                        }
+                    }
+                    out.flush()
                 }
             }
             if (written <= 0L || !destFile.exists() || destFile.length() == 0L) {
@@ -976,7 +1032,7 @@ class UpscalerRepository private constructor() {
                 val inStream = openInput() ?: throw IllegalStateException("Unable to open source video input stream for $fileName.")
                 inStream.use { input ->
                     resolver.openOutputStream(uri)?.use { out ->
-                        written = input.copyTo(out)
+                        written = input.copyTo(out, bufferSize = 64 * 1024)
                     } ?: throw IllegalStateException("Unable to open gallery output stream.")
                 }
 
@@ -1031,7 +1087,7 @@ class UpscalerRepository private constructor() {
                 val inStream = openInput() ?: throw IllegalStateException("Unable to open source video input stream for $fileName.")
                 inStream.use { input ->
                     FileOutputStream(destFile).use { out ->
-                        written = input.copyTo(out)
+                        written = input.copyTo(out, bufferSize = 64 * 1024)
                     }
                 }
 

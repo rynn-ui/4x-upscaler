@@ -158,6 +158,7 @@ def process_depth_job(job, params: Dict[str, Any]) -> None:
 
         start_time = time.time()
         frame_idx = 0
+        last_preview_time = 0.0
 
         while True:
             if job.wait_if_paused():
@@ -172,8 +173,10 @@ def process_depth_job(job, params: Dict[str, Any]) -> None:
             write_frame_fit(writer, depth_bgr, out_w, out_h)
             frame_idx += 1
 
-            if frame_idx == 1 or frame_idx % 5 == 0 or (total_frames > 0 and frame_idx == total_frames):
-                emit_progress(job, frame_idx, total_frames, start_time, depth_bgr)
+            if frame_idx == 1 or frame_idx % 4 == 0 or (total_frames > 0 and frame_idx == total_frames):
+                last_preview_time = emit_progress(
+                    job, frame_idx, total_frames, start_time, depth_bgr, last_preview_time=last_preview_time
+                )
 
         if frame_idx == 0:
             job.mark_failed("Input video contained zero readable frames.")
