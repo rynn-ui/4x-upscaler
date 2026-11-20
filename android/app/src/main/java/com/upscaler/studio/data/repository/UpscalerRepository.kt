@@ -438,20 +438,16 @@ class UpscalerRepository private constructor() {
 
     fun getEffectiveVideoGenConnection(): BackendConnection? {
         return synchronized(stateLock) {
-            if (_useDedicatedVideoGen.value && activeVideoGenConnection != null) {
-                activeVideoGenConnection
-            } else {
-                activeConnection
-            }
+            activeVideoGenConnection ?: activeConnection
         }
     }
 
     fun getEffectiveVideoGenConnectionState(): ConnectionState {
-        return if (_useDedicatedVideoGen.value) {
-            _videoGenConnectionState.value
-        } else {
-            _connectionState.value
-        }
+        val vg = _videoGenConnectionState.value
+        if (vg is ConnectionState.Connected) return vg
+        val prim = _connectionState.value
+        if (prim is ConnectionState.Connected && activeVideoGenConnection == null) return prim
+        return vg
     }
 
     fun getEffectiveVideoGenBaseUrl(): String {
@@ -759,6 +755,178 @@ class UpscalerRepository private constructor() {
                     if (tempUploadFile != null && tempUploadFile.exists()) {
                         tempUploadFile.delete()
                     }
+                } catch (_: Exception) {
+                }
+            }
+        }
+        submissionJobs[localId] = submissionCoro
+
+        return localId
+    }
+
+    /**
+     * Submits a Video Generation job to Wan AI engine on repoScope.
+     * Supports T2V (0 input files), I2V (1 image), V2V (1 video),
+     * and Motion Copy / Character Swap (primary video + secondary reference image).
+     */
+    fun submitVideoGenJob(
+        context: Context,
+        mode: String,
+        primaryMediaUri: Uri?,
+        referenceImageUri: Uri?,
+        params: Map<String, Any>,
+        paramsSummary: String,
+        outputPrefix: String = "videogen"
+    ): String {
+        init(context)
+
+        val conn = getEffectiveVideoGenConnection()
+            ?: throw IllegalStateException("Video Gen Colab is offline. Connect to Colab first.")
+
+        val ctx = context.applicationContext
+        val localId = UUID.randomUUID().toString()
+        val displayName = when {
+            primaryMediaUri != null -> resolveDisplayName(ctx, primaryMediaUri)
+            params["prompt"] != null -> (params["prompt"] as String).take(30).ifBlank { "Wan Video Gen" }
+            else -> "Wan Video Gen"
+        }
+        val outFileName = "${outputPrefix}_${System.currentTimeMillis()}.mp4"
+        val clientSubmissionId = UUID.randomUUID().toString()
+
+        // Best-effort persistable permissions if URIs provided
+        primaryMediaUri?.let { uri ->
+            try {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+        }
+        referenceImageUri?.let { uri ->
+            try {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+        }
+
+        val initial = ManagedJob(
+            localId = localId,
+            taskType = "videogen",
+            sourceUriString = primaryMediaUri?.toString() ?: "",
+            sourceDisplayName = displayName,
+            paramsSummary = paramsSummary,
+            outputFileName = outFileName,
+            phase = JobPhase.PREPARING,
+            originBaseUrl = conn.baseUrl,
+            originAuthToken = conn.authToken ?: "",
+            originSessionId = conn.backendInstanceId ?: "",
+            clientSubmissionId = clientSubmissionId
+        )
+        putJob(initial)
+
+        val submissionCoro = repoScope.launch {
+            var tempPrimaryFile: File? = null
+            var tempRefFile: File? = null
+            try {
+                if (primaryMediaUri != null) {
+                    tempPrimaryFile = copyUriToTempFile(ctx, primaryMediaUri, "videogen_primary")
+                    if (!tempPrimaryFile.exists() || tempPrimaryFile.length() == 0L) {
+                        throw IllegalStateException("Selected media file could not be read or is empty.")
+                    }
+                    val fileLenMb = tempPrimaryFile.length() / (1024 * 1024)
+                    if (fileLenMb >= 95 && conn.baseUrl.contains("trycloudflare.com", ignoreCase = true)) {
+                        throw IllegalStateException(
+                            "Input media is ${fileLenMb}MB, which exceeds Cloudflare tunnel's 100MB limit. " +
+                            "Please trim the file or run Colab with an Ngrok token for unlimited upload sizes."
+                        )
+                    }
+                }
+
+                if (referenceImageUri != null) {
+                    tempRefFile = copyUriToTempFile(ctx, referenceImageUri, "videogen_ref")
+                    if (!tempRefFile.exists() || tempRefFile.length() == 0L) {
+                        throw IllegalStateException("Selected reference image could not be read or is empty.")
+                    }
+                }
+
+                val preUpload = _jobs.value[localId]
+                if (preUpload == null || preUpload.cancellationRequested || preUpload.phase == JobPhase.CANCELLED) {
+                    return@launch
+                }
+
+                mutateJob(localId) {
+                    it.copy(
+                        phase = JobPhase.UPLOADING,
+                        paramsSummary = "Submitting to Wan AI engine...",
+                        errorMessage = null
+                    )
+                }
+
+                val filePart: MultipartBody.Part? = tempPrimaryFile?.let { file ->
+                    val mimeType = if (mode == "i2v") "image/*" else "application/octet-stream"
+                    val requestFile = file.asRequestBody(mimeType.toMediaType())
+                    MultipartBody.Part.createFormData("file", file.name, requestFile)
+                }
+
+                val refPart: MultipartBody.Part? = tempRefFile?.let { file ->
+                    val requestFile = file.asRequestBody("image/*".toMediaType())
+                    MultipartBody.Part.createFormData("reference_image", file.name, requestFile)
+                }
+
+                val paramsBody = gson.toJson(params).toRequestBody("application/json".toMediaType())
+                val clientSubBody = clientSubmissionId.toRequestBody("text/plain".toMediaType())
+
+                val submitResp = conn.apiService.submitVideoGenJob(
+                    file = filePart,
+                    referenceImage = refPart,
+                    paramsJson = paramsBody,
+                    clientSubmissionId = clientSubBody
+                )
+
+                val postUpload = _jobs.value[localId]
+                if (postUpload == null || postUpload.cancellationRequested || postUpload.phase == JobPhase.CANCELLED) {
+                    return@launch
+                }
+
+                mutateJob(localId) {
+                    it.copy(
+                        serverJobId = submitResp.jobId,
+                        phase = if (submitResp.status == "processing") JobPhase.PROCESSING else JobPhase.QUEUED,
+                        paramsSummary = paramsSummary
+                    )
+                }
+                startMonitoring(localId)
+            } catch (e: CancellationException) {
+                val latest = _jobs.value[localId]
+                if (latest != null && (latest.cancellationRequested || latest.phase == JobPhase.CANCELLED)) {
+                    // Already marked cancelled
+                } else {
+                    mutateJob(localId) { it.copy(phase = JobPhase.CANCELLED) }
+                }
+                throw e
+            } catch (e: Exception) {
+                val latest = _jobs.value[localId]
+                if (latest != null && (latest.cancellationRequested || latest.phase == JobPhase.CANCELLED)) {
+                    return@launch
+                }
+                mutateJob(localId) {
+                    it.copy(
+                        phase = JobPhase.FAILED,
+                        errorMessage = formatNetworkError(e)
+                    )
+                }
+            } finally {
+                submissionJobs.remove(localId)
+                try {
+                    tempPrimaryFile?.delete()
+                } catch (_: Exception) {
+                }
+                try {
+                    tempRefFile?.delete()
                 } catch (_: Exception) {
                 }
             }
@@ -1623,11 +1791,17 @@ class UpscalerRepository private constructor() {
         val dot = name.lastIndexOf('.')
         if (dot >= 0) {
             val ext = name.substring(dot)
-            if (ext in setOf(".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")) {
+            if (ext in setOf(".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".png", ".jpg", ".jpeg", ".webp")) {
                 return ext
             }
         }
-        return ".mp4"
+        val mime = runCatching { context.contentResolver.getType(uri)?.lowercase() }.getOrNull() ?: ""
+        return when {
+            mime.contains("png") -> ".png"
+            mime.contains("jpeg") || mime.contains("jpg") -> ".jpg"
+            mime.contains("webp") -> ".webp"
+            else -> ".mp4"
+        }
     }
 
     private fun putJob(job: ManagedJob) {

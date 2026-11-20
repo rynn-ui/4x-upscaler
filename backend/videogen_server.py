@@ -420,6 +420,14 @@ async def cancel_job(job_id: str):
     return {"status": "cancelling" if current_status not in TERMINAL_STATES else current_status}
 
 
+@app.post("/api/v1/jobs/cancel-client-submission", dependencies=[Depends(require_auth)])
+async def cancel_client_submission(client_submission_id: str):
+    if not client_submission_id or not client_submission_id.strip():
+        raise HTTPException(status_code=400, detail="client_submission_id parameter is required.")
+    ok, status = job_manager.cancel_client_submission(client_submission_id.strip())
+    return {"client_submission_id": client_submission_id.strip(), "status": status}
+
+
 @app.get("/api/v1/jobs/{job_id}/download", dependencies=[Depends(require_auth)])
 async def download_result(job_id: str):
     job = job_manager.get_job(job_id)
@@ -440,10 +448,9 @@ async def download_result(job_id: str):
 # WebSocket Real-Time Progress & Thumbnail Streaming
 # ---------------------------------------------------------------------------
 
+@app.websocket("/api/v1/jobs/{job_id}/stream")
 @app.websocket("/api/v1/jobs/{job_id}/ws")
 async def job_websocket(websocket: WebSocket, job_id: str):
-    await websocket.accept()
-
     raw_token = websocket.query_params.get("token")
     if not raw_token:
         auth_header = websocket.headers.get("authorization", "")
@@ -452,30 +459,30 @@ async def job_websocket(websocket: WebSocket, job_id: str):
         raw_token = websocket.headers.get("x-upscaler-token")
 
     if not _verify_token_value(raw_token):
-        await websocket.send_json({"type": "error", "message": "Unauthorized token."})
-        await websocket.close(code=1008)
+        await websocket.close(code=4401)
         return
 
     job = job_manager.get_job(job_id)
     if not job:
+        await websocket.accept()
         await websocket.send_json({"type": "error", "message": f"Job '{job_id}' not found."})
-        await websocket.close(code=1008)
+        await websocket.close()
         return
 
+    await websocket.accept()
     loop = asyncio.get_running_loop()
     event_queue = job.subscribe(loop)
 
     try:
         initial = job.current_snapshot_event()
         await websocket.send_json(initial)
-        if initial.get("status") in TERMINAL_STATES:
-            await websocket.close(code=1000)
+        if initial.get("type") in ("complete", "error", "cancelled"):
             return
 
         while True:
             evt = await event_queue.get()
             await websocket.send_json(evt)
-            if evt.get("status") in TERMINAL_STATES:
+            if evt.get("type") in ("complete", "error", "cancelled"):
                 break
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass

@@ -27,6 +27,15 @@ interface UpscalerApiService {
         @Part("client_submission_id") clientSubmissionId: RequestBody? = null
     ): JobSubmitResponse
 
+    @Multipart
+    @POST("/api/v1/videogen/submit")
+    suspend fun submitVideoGenJob(
+        @Part file: MultipartBody.Part? = null,
+        @Part referenceImage: MultipartBody.Part? = null,
+        @Part("params_json") paramsJson: RequestBody? = null,
+        @Part("client_submission_id") clientSubmissionId: RequestBody? = null
+    ): JobSubmitResponse
+
     @POST("/api/v1/jobs/cancel-client-submission")
     suspend fun cancelClientSubmission(
         @Query("client_submission_id") clientSubmissionId: String

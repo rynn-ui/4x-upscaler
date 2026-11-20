@@ -10,8 +10,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,16 +23,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.upscaler.studio.data.model.JobPhase
 import com.upscaler.studio.data.repository.ConnectionState
 import com.upscaler.studio.data.repository.UpscalerRepository
+import com.upscaler.studio.ui.components.LiveProgressCard
+import com.upscaler.studio.ui.player.BeforeAfterComparisonPlayer
 import com.upscaler.studio.ui.theme.*
+import kotlinx.coroutines.launch
 
 data class VideoGenModeInfo(
     val key: String,
@@ -47,7 +48,7 @@ private val VIDEOGEN_MODES = listOf(
     VideoGenModeInfo("t2v", "Text to Video", Icons.Default.AutoAwesome, "Wan 2.1 1.3B / Wan 2.2 5B"),
     VideoGenModeInfo("i2v", "Image to Video", Icons.Default.Image, "Animate still images"),
     VideoGenModeInfo("v2v", "Video to Video", Icons.Default.MovieFilter, "Wan VACE + Depth guidance"),
-    VideoGenModeInfo("motion_copy", "Motion Copy", Icons.Default.Person, "LivePortrait / Wan Animate"),
+    VideoGenModeInfo("motion_copy", "Motion Copy", Icons.Default.Person, "Wan 2.2 Animate Motion"),
     VideoGenModeInfo("character_exchange", "Character Swap", Icons.Default.Face, "Wan VACE / MoCha swap")
 )
 
@@ -57,6 +58,7 @@ fun VideoGenStudioScreen(
 ) {
     val context = LocalContext.current
     val repository = remember { UpscalerRepository.instance }
+    val scope = rememberCoroutineScope()
     val draft = remember { repository.getStudioDraft("videogen") }
 
     var selectedMode by remember { mutableStateOf(draft["selectedMode"] as? String ?: "t2v") }
@@ -73,6 +75,15 @@ fun VideoGenStudioScreen(
     var referenceImageUri by remember {
         mutableStateOf(draft["referenceImageUri"]?.toString()?.let { Uri.parse(it) })
     }
+
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    // Job observation
+    val allJobs by repository.jobs.collectAsState()
+    val currentJob = remember(allJobs) { repository.latestJobForTask("videogen") }
+    val isJobActive = currentJob != null && currentJob.phase.isActive
+    val hasCompletedPreview = currentJob != null && currentJob.phase == JobPhase.SAVED && !currentJob.savedUriString.isNullOrBlank()
+    val isFailedOrCancelled = currentJob != null && (currentJob.phase == JobPhase.FAILED || currentJob.phase == JobPhase.CANCELLED)
 
     LaunchedEffect(
         selectedMode, prompt, negativePrompt, selectedModel,
@@ -96,7 +107,46 @@ fun VideoGenStudioScreen(
     }
 
     val videoGenConn by repository.videoGenConnectionState.collectAsState()
-    val isConnected = videoGenConn is ConnectionState.Connected
+    val primaryConn by repository.connectionState.collectAsState()
+    val effectiveConn = repository.getEffectiveVideoGenConnection()
+    val isConnected = (videoGenConn is ConnectionState.Connected) || (effectiveConn != null && primaryConn is ConnectionState.Connected)
+
+    val modelOptions = remember(selectedMode) {
+        when (selectedMode) {
+            "t2v" -> listOf(
+                "wan22_ti2v_5b" to "Wan 2.2 TI2V 5B (Recommended)",
+                "wan21_t2v_1_3b" to "Wan 2.1 T2V 1.3B (Ultra Fast · T4)",
+                "wan22_t2v_14b" to "Wan 2.2 T2V A14B (Flagship 24GB+)",
+                "ltx25_av" to "LTX-2.5 (Fast + Native Audio)",
+                "hunyuan_video_1_5" to "HunyuanVideo 1.5 (8.3B Cinematic)"
+            )
+            "i2v" -> listOf(
+                "wan22_ti2v_5b" to "Wan 2.2 TI2V 5B (Recommended)",
+                "wan22_i2v_14b" to "Wan 2.2 I2V A14B (Flagship 24GB+)",
+                "hunyuan_video_1_5" to "HunyuanVideo 1.5 (Cinematic)",
+                "ltx25_av" to "LTX-2.5 (Fast I2V)"
+            )
+            "v2v" -> listOf(
+                "wan21_vace_1_3b" to "Wan 2.1 VACE 1.3B (T4 Ready)",
+                "wan21_vace_14b" to "Wan 2.1 VACE 14B (Flagship 24GB+)"
+            )
+            "motion_copy" -> listOf(
+                "wan22_animate_14b" to "Wan 2.2 Animate-2 14B (Full Body Motion Transfer)"
+            )
+            "character_exchange" -> listOf(
+                "wan21_vace_1_3b" to "Wan 2.1 VACE 1.3B (Fast Swap · T4)",
+                "wan21_vace_14b" to "Wan 2.1 VACE 14B (High Res Swap)",
+                "wan22_animate_14b" to "Wan 2.2 Animate Replacement"
+            )
+            else -> listOf("wan22_ti2v_5b" to "Wan 2.2 TI2V 5B")
+        }
+    }
+
+    LaunchedEffect(modelOptions) {
+        if (selectedModel !in modelOptions.map { it.first }) {
+            selectedModel = modelOptions.first().first
+        }
+    }
 
     val primaryPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -175,6 +225,97 @@ fun VideoGenStudioScreen(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Live Progress Card when job is actively running
+            if (isJobActive) {
+                currentJob?.let { activeJob ->
+                    LiveProgressCard(
+                        job = activeJob,
+                        onPauseToggle = { repository.togglePauseResume(activeJob.localId) },
+                        onCancel = { repository.cancelManagedJob(activeJob.localId) },
+                        onCheckStatus = { repository.checkAndRecoverJob(activeJob.localId) }
+                    )
+                }
+            }
+
+            // Completed Video Review & Comparison Player
+            if (hasCompletedPreview) {
+                currentJob?.let { savedJob ->
+                    val outUri = remember(savedJob.savedUriString) { Uri.parse(savedJob.savedUriString) }
+                    BeforeAfterComparisonPlayer(
+                        outputUri = outUri,
+                        savedFileName = savedJob.outputFileName,
+                        onProcessAgain = { repository.dismissCompletedOrFailedJob(savedJob.localId) }
+                    )
+                }
+            }
+
+            // Error / Cancelled Banner
+            if (isFailedOrCancelled) {
+                currentJob?.let { failedJob ->
+                    val isCancelled = failedJob.phase == JobPhase.CANCELLED
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(ShapeCorner14)
+                            .background(DarkSurface)
+                            .border(
+                                1.dp,
+                                if (isCancelled) StatusWarningAmber else StatusOfflineRed,
+                                ShapeCorner14
+                            )
+                            .padding(14.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = if (isCancelled) "Job Cancelled" else "Generation Failed",
+                                color = if (isCancelled) StatusWarningAmber else StatusOfflineRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = failedJob.errorMessage ?: "Video generation did not complete.",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (failedJob.canRetryDownload && !failedJob.serverJobId.isNullOrBlank()) {
+                                    Button(
+                                        onClick = { repository.retryDownload(failedJob.localId) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary),
+                                        shape = ShapeCorner12,
+                                        modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Retry Download", color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                } else if (!failedJob.serverJobId.isNullOrBlank() && !isCancelled) {
+                                    OutlinedButton(
+                                        onClick = { repository.checkAndRecoverJob(failedJob.localId) },
+                                        shape = ShapeCorner12,
+                                        modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                                    ) {
+                                        Text("Check Status", color = Color.White)
+                                    }
+                                }
+                                TextButton(
+                                    onClick = { repository.dismissCompletedOrFailedJob(failedJob.localId) },
+                                    shape = ShapeCorner12,
+                                    modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                                ) {
+                                    Text("Dismiss", color = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Lock controls while actively generating or reviewing output
+            val isControlsLocked = isJobActive || hasCompletedPreview || isSubmitting
+
             // Modality Selector Bar
             Text("Generation Modality", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Row(
@@ -198,7 +339,7 @@ fun VideoGenStudioScreen(
                                 if (isSel) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
                                 ShapeCorner10
                             )
-                            .clickable { selectedMode = mode.key }
+                            .clickable(enabled = !isControlsLocked) { selectedMode = mode.key }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -259,6 +400,7 @@ fun VideoGenStudioScreen(
                                 }
                                 primaryPicker.launch(PickVisualMediaRequest(mimeType))
                             },
+                            enabled = !isControlsLocked,
                             shape = ShapeCorner12,
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary),
                             border = BorderStroke(1.dp, GreenPrimary),
@@ -295,6 +437,7 @@ fun VideoGenStudioScreen(
                                 onClick = {
                                     referencePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                                 },
+                                enabled = !isControlsLocked,
                                 shape = ShapeCorner12,
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = GreenPrimary),
                                 border = BorderStroke(1.dp, GreenPrimary),
@@ -326,6 +469,7 @@ fun VideoGenStudioScreen(
                     OutlinedTextField(
                         value = prompt,
                         onValueChange = { prompt = it },
+                        enabled = !isControlsLocked,
                         placeholder = {
                             Text(
                                 "Describe cinematic camera movement, subject action, atmosphere, and lighting...",
@@ -368,6 +512,7 @@ fun VideoGenStudioScreen(
                             OutlinedTextField(
                                 value = negativePrompt,
                                 onValueChange = { negativePrompt = it },
+                                enabled = !isControlsLocked,
                                 placeholder = {
                                     Text("blurry, distorted, low quality, artifacts...", color = TextMuted, fontSize = 12.5.sp)
                                 },
@@ -398,36 +543,6 @@ fun VideoGenStudioScreen(
                     Text("Model & Pipeline", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
 
-                    val modelOptions = when (selectedMode) {
-                        "t2v" -> listOf(
-                            "wan22_ti2v_5b" to "Wan 2.2 TI2V 5B (Recommended)",
-                            "wan21_t2v_1_3b" to "Wan 2.1 T2V 1.3B (Ultra Fast · T4)",
-                            "wan22_t2v_14b" to "Wan 2.2 T2V A14B (Flagship 24GB+)",
-                            "ltx25_av" to "LTX-2.5 (Fast + Native Audio)",
-                            "hunyuan_video_1_5" to "HunyuanVideo 1.5 (8.3B Cinematic)"
-                        )
-                        "i2v" -> listOf(
-                            "wan22_ti2v_5b" to "Wan 2.2 TI2V 5B (Recommended)",
-                            "wan22_i2v_14b" to "Wan 2.2 I2V A14B (Flagship 24GB+)",
-                            "hunyuan_video_1_5" to "HunyuanVideo 1.5 (Cinematic)",
-                            "ltx25_av" to "LTX-2.5 (Fast I2V)"
-                        )
-                        "v2v" -> listOf(
-                            "wan21_vace_1_3b" to "Wan 2.1 VACE 1.3B (T4 Ready)",
-                            "wan21_vace_14b" to "Wan 2.1 VACE 14B (Flagship 24GB+)"
-                        )
-                        "motion_copy" -> listOf(
-                            "liveportrait_face" to "LivePortrait (Face & Portrait · T4)",
-                            "wan22_animate_14b" to "Wan 2.2 Animate-2 14B (Full Body)"
-                        )
-                        "character_exchange" -> listOf(
-                            "wan21_vace_1_3b" to "Wan 2.1 VACE Swap-Anything",
-                            "wan22_animate_14b" to "Wan 2.2 Animate Replacement",
-                            "mocha_swap" to "MoCha Character Swap (24GB+)"
-                        )
-                        else -> listOf("wan22_ti2v_5b" to "Wan 2.2 TI2V 5B")
-                    }
-
                     modelOptions.forEach { (key, label) ->
                         val isChosen = selectedModel == key || (selectedModel !in modelOptions.map { it.first } && key == modelOptions.first().first)
                         Row(
@@ -435,18 +550,19 @@ fun VideoGenStudioScreen(
                                 .fillMaxWidth()
                                 .clip(ShapeCorner10)
                                 .background(if (isChosen) Color(0xFF132A1F) else Color.Transparent)
-                            .border(
-                                1.dp,
-                                if (isChosen) GreenPrimary.copy(alpha = 0.7f) else DarkCardBorder,
-                                ShapeCorner10
-                            )
-                            .clickable { selectedModel = key }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .border(
+                                    1.dp,
+                                    if (isChosen) GreenPrimary.copy(alpha = 0.7f) else DarkCardBorder,
+                                    ShapeCorner10
+                                )
+                                .clickable(enabled = !isControlsLocked) { selectedModel = key }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
                                 selected = isChosen,
-                                onClick = { selectedModel = key },
+                                onClick = { if (!isControlsLocked) selectedModel = key },
+                                enabled = !isControlsLocked,
                                 colors = RadioButtonDefaults.colors(selectedColor = GreenPrimary)
                             )
                             Spacer(Modifier.width(8.dp))
@@ -477,7 +593,7 @@ fun VideoGenStudioScreen(
                                         .clip(ShapeCorner8)
                                         .background(if (sel) GreenPillBg else DarkSurfaceVariant)
                                         .border(1.dp, if (sel) GreenPrimary else Color.Transparent, ShapeCorner8)
-                                        .clickable { selectedAspectRatio = ratio }
+                                        .clickable(enabled = !isControlsLocked) { selectedAspectRatio = ratio }
                                         .padding(vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -511,7 +627,7 @@ fun VideoGenStudioScreen(
                                         .clip(ShapeCorner8)
                                         .background(if (sel) GreenPillBg else DarkSurfaceVariant)
                                         .border(1.dp, if (sel) GreenPrimary else Color.Transparent, ShapeCorner8)
-                                        .clickable { selectedDuration = dur }
+                                        .clickable(enabled = !isControlsLocked) { selectedDuration = dur }
                                         .padding(vertical = 6.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -529,40 +645,104 @@ fun VideoGenStudioScreen(
             }
 
             // Generate Button
+            val canSubmit = isConnected && !isJobActive && !hasCompletedPreview && !isSubmitting
             Button(
                 onClick = {
                     if (!isConnected) {
-                        Toast.makeText(context, "Colab backend is offline. Connect first.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Video Gen Colab is offline. Connect from Home first.", Toast.LENGTH_LONG).show()
                         return@Button
                     }
                     if (selectedMode == "t2v" && prompt.isBlank()) {
-                        Toast.makeText(context, "Please enter a prompt.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Please enter a prompt to generate video.", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (selectedMode in listOf("i2v", "v2v") && primaryMediaUri == null) {
-                        Toast.makeText(context, "Please select an input image/video.", Toast.LENGTH_SHORT).show()
+                        val kind = if (selectedMode == "i2v") "an image" else "a video"
+                        Toast.makeText(context, "Please select $kind input file.", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    if (selectedMode in listOf("motion_copy", "character_exchange") && (primaryMediaUri == null || referenceImageUri == null)) {
-                        Toast.makeText(context, "Please select both source video and target image.", Toast.LENGTH_SHORT).show()
-                        return@Button
+                    if (selectedMode in listOf("motion_copy", "character_exchange")) {
+                        if (primaryMediaUri == null) {
+                            Toast.makeText(context, "Please select the source video.", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (referenceImageUri == null) {
+                            Toast.makeText(context, "Please select the target character reference image.", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                     }
-                    Toast.makeText(context, "Video Generation Job queued on Wan engine!", Toast.LENGTH_SHORT).show()
+
+                    val params = mapOf(
+                        "mode" to selectedMode,
+                        "model" to selectedModel,
+                        "prompt" to prompt.trim(),
+                        "negative_prompt" to negativePrompt.trim(),
+                        "aspect_ratio" to selectedAspectRatio,
+                        "duration_sec" to selectedDuration,
+                        "resolution" to selectedResolution
+                    )
+                    val summary = "${selectedMode.uppercase()} • $selectedModel • $selectedAspectRatio • ${selectedDuration}s"
+
+                    scope.launch {
+                        isSubmitting = true
+                        try {
+                            repository.submitVideoGenJob(
+                                context = context,
+                                mode = selectedMode,
+                                primaryMediaUri = primaryMediaUri,
+                                referenceImageUri = referenceImageUri,
+                                params = params,
+                                paramsSummary = summary,
+                                outputPrefix = "wan_${selectedMode}"
+                            )
+                            Toast.makeText(context, "Video generation job queued on Wan AI!", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Submission failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        } finally {
+                            isSubmitting = false
+                        }
+                    }
                 },
+                enabled = canSubmit,
                 shape = ShapeCorner16,
-                colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GreenPrimary,
+                    disabledContainerColor = DarkSurfaceVariant
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Generate with Wan AI",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Submitting to GPU...", color = Color.White, fontWeight = FontWeight.Bold)
+                } else if (isJobActive) {
+                    Icon(Icons.Default.HourglassTop, contentDescription = null, tint = TextSecondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Rendering Video (${currentJob?.progress?.toInt() ?: 0}%)...", color = TextSecondary, fontWeight = FontWeight.Bold)
+                } else if (hasCompletedPreview) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = GreenIconTint)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Video Rendered • Review Above", color = GreenIconTint, fontWeight = FontWeight.Bold)
+                } else if (!isConnected) {
+                    Icon(Icons.Default.CloudOff, contentDescription = null, tint = TextSecondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Connect Video Gen Colab First", color = TextSecondary, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Generate with Wan AI",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
