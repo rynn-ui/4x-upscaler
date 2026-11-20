@@ -95,11 +95,8 @@ fun VideoGenStudioScreen(
         )
     }
 
-    val useDedicated by repository.useDedicatedVideoGen.collectAsState()
-    val primaryConn by repository.connectionState.collectAsState()
     val videoGenConn by repository.videoGenConnectionState.collectAsState()
-    val effectiveConnState = if (useDedicated) videoGenConn else primaryConn
-    val isConnected = effectiveConnState is ConnectionState.Connected
+    val isConnected = videoGenConn is ConnectionState.Connected
 
     val primaryPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -138,7 +135,7 @@ fun VideoGenStudioScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (useDedicated) "Dedicated Video Gen Colab" else "Shared Colab Backend (Wan 2.1/2.2)",
+                            text = if (isConnected) "Wan 2.1 / 2.2 Video Engine Online" else "Video Gen Backend Offline",
                             color = if (isConnected) GreenIconTint else TextMuted,
                             fontSize = 11.5.sp
                         )

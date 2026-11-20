@@ -396,8 +396,6 @@ fun HomeScreen(
             0 -> HomeTabContent(
                 selectedColabTarget = selectedColabTarget,
                 onSelectColabTarget = { repository.selectColabTarget(it) },
-                useDedicatedVideoGen = useDedicatedVideoGen,
-                onToggleDedicatedVideoGen = { repository.setUseDedicatedVideoGen(it) },
                 primaryConnectionState = connectionState,
                 videoGenConnectionState = videoGenConnectionState,
                 primaryBaseUrl = currentUrl,
@@ -558,7 +556,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "⚡ Enhancement",
+                                "Enhancement",
                                 color = if (isPrim) GreenIconTint else TextSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -579,7 +577,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "🎬 Video Gen",
+                                "Video Gen",
                                 color = if (isVid) GreenIconTint else TextSecondary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
@@ -1223,8 +1221,6 @@ private fun BottomNavTab(
 private fun HomeTabContent(
     selectedColabTarget: ColabTarget,
     onSelectColabTarget: (ColabTarget) -> Unit,
-    useDedicatedVideoGen: Boolean,
-    onToggleDedicatedVideoGen: (Boolean) -> Unit,
     primaryConnectionState: ConnectionState,
     videoGenConnectionState: ConnectionState,
     primaryBaseUrl: String,
@@ -1238,15 +1234,7 @@ private fun HomeTabContent(
     onNavigateStudio: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val activeState = when (selectedColabTarget) {
-        ColabTarget.PRIMARY -> primaryConnectionState
-        ColabTarget.VIDEOGEN -> if (useDedicatedVideoGen) videoGenConnectionState else primaryConnectionState
-    }
-    val activeBaseUrl = when (selectedColabTarget) {
-        ColabTarget.PRIMARY -> primaryBaseUrl
-        ColabTarget.VIDEOGEN -> if (useDedicatedVideoGen) videoGenBaseUrl else primaryBaseUrl
-    }
-    val isSharedFallback = selectedColabTarget == ColabTarget.VIDEOGEN && !useDedicatedVideoGen
+    val activeState = if (selectedColabTarget == ColabTarget.VIDEOGEN) videoGenConnectionState else primaryConnectionState
 
     LazyColumn(
         modifier = modifier.padding(horizontal = 16.dp),
@@ -1256,13 +1244,9 @@ private fun HomeTabContent(
             ConnectionHeroCard(
                 selectedTarget = selectedColabTarget,
                 onSelectTarget = onSelectColabTarget,
-                useDedicatedVideoGen = useDedicatedVideoGen,
-                onToggleDedicatedVideoGen = onToggleDedicatedVideoGen,
                 primaryConnected = primaryConnectionState is ConnectionState.Connected,
-                videoGenConnected = if (useDedicatedVideoGen) videoGenConnectionState is ConnectionState.Connected else primaryConnectionState is ConnectionState.Connected,
+                videoGenConnected = videoGenConnectionState is ConnectionState.Connected,
                 connectionState = activeState,
-                isSharedFallback = isSharedFallback,
-                sharedHost = primaryBaseUrl,
                 onOpenColab = onOpenColab,
                 onDisconnectColab = onDisconnectColab,
                 onScanQr = onScanQr,
@@ -1412,13 +1396,9 @@ private fun HomeTabContent(
 private fun ConnectionHeroCard(
     selectedTarget: ColabTarget,
     onSelectTarget: (ColabTarget) -> Unit,
-    useDedicatedVideoGen: Boolean,
-    onToggleDedicatedVideoGen: (Boolean) -> Unit,
     primaryConnected: Boolean,
     videoGenConnected: Boolean,
     connectionState: ConnectionState,
-    isSharedFallback: Boolean = false,
-    sharedHost: String = "",
     onOpenColab: () -> Unit,
     onDisconnectColab: () -> Unit,
     onScanQr: () -> Unit,
@@ -1432,53 +1412,31 @@ private fun ConnectionHeroCard(
         is ConnectionState.Failed -> StatusOfflineRed
         is ConnectionState.Disconnected -> StatusOfflineRed
     }
-    val statusHeading = when {
-        selectedTarget == ColabTarget.VIDEOGEN && isSharedFallback -> {
-            when (connectionState) {
-                is ConnectionState.Connected -> "Shared Backend: Wan Ready"
-                is ConnectionState.Connecting -> "Checking Shared Colab..."
-                is ConnectionState.Failed -> "Shared Backend Offline"
-                is ConnectionState.Disconnected -> "Shared Backend Offline"
-            }
+    val statusHeading = if (selectedTarget == ColabTarget.VIDEOGEN) {
+        when (connectionState) {
+            is ConnectionState.Connected -> "Video Gen Online"
+            is ConnectionState.Connecting -> "Connecting to Video Gen..."
+            is ConnectionState.Failed -> "Video Gen Offline"
+            is ConnectionState.Disconnected -> "Video Gen Offline"
         }
-        selectedTarget == ColabTarget.VIDEOGEN -> {
-            when (connectionState) {
-                is ConnectionState.Connected -> "Video Gen Online"
-                is ConnectionState.Connecting -> "Connecting to Video Gen..."
-                is ConnectionState.Failed -> "Video Gen Offline"
-                is ConnectionState.Disconnected -> "Video Gen Offline"
-            }
-        }
-        else -> {
-            when (connectionState) {
-                is ConnectionState.Connected -> "Backend Online"
-                is ConnectionState.Connecting -> "Connecting to Colab..."
-                is ConnectionState.Failed -> "Connection Failed"
-                is ConnectionState.Disconnected -> "Backend Offline"
-            }
+    } else {
+        when (connectionState) {
+            is ConnectionState.Connected -> "Backend Online"
+            is ConnectionState.Connecting -> "Connecting to Colab..."
+            is ConnectionState.Failed -> "Connection Failed"
+            is ConnectionState.Disconnected -> "Backend Offline"
         }
     }
-    val statusSub = when {
-        selectedTarget == ColabTarget.VIDEOGEN && isSharedFallback -> {
-            when (connectionState) {
-                is ConnectionState.Connected -> {
-                    val g = connectionState.health.gpu
-                    "Using Enhancement GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free). Wan video generation supported."
-                }
-                else -> "Primary Colab is offline. Connect Enhancement Colab or toggle Dedicated Colab."
-            }
+    val statusSub = when (connectionState) {
+        is ConnectionState.Connected -> {
+            val g = connectionState.health.gpu
+            "GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free)"
         }
-        else -> when (connectionState) {
-            is ConnectionState.Connected -> {
-                val g = connectionState.health.gpu
-                "GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free)"
-            }
-            is ConnectionState.Connecting -> "Checking health & capabilities at ${connectionState.baseUrl}"
-            is ConnectionState.Failed -> connectionState.message
-            is ConnectionState.Disconnected ->
-                if (selectedTarget == ColabTarget.VIDEOGEN) "Start the 1-click Video Gen Colab notebook, then paste URL or scan QR."
-                else "Start the 1-click Colab notebook, then tap the app link, scan QR, or paste URL."
-        }
+        is ConnectionState.Connecting -> "Checking health & capabilities at ${connectionState.baseUrl}"
+        is ConnectionState.Failed -> connectionState.message
+        is ConnectionState.Disconnected ->
+            if (selectedTarget == ColabTarget.VIDEOGEN) "Start the Video Gen Colab notebook, then paste URL or scan QR."
+            else "Start the 1-click Colab notebook, then tap the app link, scan QR, or paste URL."
     }
 
     Box(
@@ -1535,7 +1493,7 @@ private fun ConnectionHeroCard(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "⚡ Enhancement",
+                            text = "Enhancement",
                             color = if (isPrimary) Color.White else TextSecondary,
                             fontSize = 13.sp,
                             fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
@@ -1578,56 +1536,10 @@ private fun ConnectionHeroCard(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "🎬 Video Gen",
+                            text = "Video Gen",
                             color = if (isVideoGen) Color.White else TextSecondary,
                             fontSize = 13.sp,
                             fontWeight = if (isVideoGen) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            // Dedicated mode option when Video Gen is selected
-            if (selectedTarget == ColabTarget.VIDEOGEN) {
-                Spacer(Modifier.height(10.dp))
-                Surface(
-                    color = Color(0xFF101320),
-                    shape = ShapeCorner10,
-                    border = BorderStroke(1.dp, Color(0xFF1E2335)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Icon(
-                                imageVector = Icons.Default.Dns,
-                                contentDescription = null,
-                                tint = if (useDedicatedVideoGen) GreenIconTint else TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = if (useDedicatedVideoGen) "Dedicated Video Gen GPU" else "Shared Mode (Using Enhancement Colab)",
-                                color = if (useDedicatedVideoGen) Color.White else TextSecondary,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Switch(
-                            checked = useDedicatedVideoGen,
-                            onCheckedChange = onToggleDedicatedVideoGen,
-                            modifier = Modifier.scale(0.8f),
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = GreenPrimary,
-                                uncheckedThumbColor = TextSecondary,
-                                uncheckedTrackColor = Color(0xFF1E2235)
-                            )
                         )
                     }
                 }
@@ -1852,17 +1764,15 @@ private fun ConnectionHeroCard(
                         .defaultMinSize(minHeight = 48.dp)
                         .clip(ShapeCorner20)
                         .background(
-                            if (isConnected && !isSharedFallback) {
+                            if (isConnected) {
                                 androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFDC2626), Color(0xFFEF4444)))
-                            } else if (isSharedFallback) {
-                                androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF1B3D2B), Color(0xFF1B3D2B)))
                             } else {
                                 androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF381A22), Color(0xFF381A22)))
                             }
                         )
                         .border(
                             1.dp,
-                            if (isConnected && !isSharedFallback) Color(0xFFEF4444) else if (isSharedFallback) Color(0xFF2C6B4A) else Color(0xFF4A2530),
+                            if (isConnected) Color(0xFFEF4444) else Color(0xFF4A2530),
                             ShapeCorner20
                         )
                         .semantics { role = Role.Button }
@@ -1882,14 +1792,14 @@ private fun ConnectionHeroCard(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
                     ) {
                         Icon(
-                            imageVector = if (isSharedFallback) Icons.Default.Link else Icons.Default.LinkOff,
+                            imageVector = Icons.Default.LinkOff,
                             contentDescription = null,
                             tint = if (isConnected) Color.White else Color(0xFFB07A85),
                             modifier = Modifier.size(19.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (isSharedFallback) "Shared Mode" else "Disconnect",
+                            text = "Disconnect",
                             color = if (isConnected) Color.White else Color(0xFFB07A85),
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,
