@@ -161,7 +161,7 @@ class RemoteConfigManager private constructor(context: Context) {
         const val KEY_VIDEOGEN_COLAB_NOTEBOOK_URL = "videogen_colab_notebook_url"
 
         const val DEFAULT_COLAB_NOTEBOOK_URL = "https://colab.research.google.com/drive/1i1WCx7EPUrMkc-jjME60AMMRDrw8XvkX"
-        const val DEFAULT_VIDEOGEN_COLAB_NOTEBOOK_URL = "https://colab.research.google.com/github/rynn-ui/upscaler-studio/blob/main/backend/videogen_colab.ipynb"
+        const val DEFAULT_VIDEOGEN_COLAB_NOTEBOOK_URL = "https://colab.research.google.com/drive/14c1pNkl92NtprlFvLTtcGBYEUkDe8r_8"
 
         @Volatile private var instance: RemoteConfigManager? = null
 
