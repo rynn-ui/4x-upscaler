@@ -67,6 +67,7 @@ import com.upscaler.studio.data.model.JobPhase
 import com.upscaler.studio.data.model.ManagedJob
 import com.upscaler.studio.data.model.SavedMediaItem
 import com.upscaler.studio.data.repository.BackendUrlParser
+import com.upscaler.studio.data.repository.ColabTarget
 import com.upscaler.studio.data.repository.ConnectionState
 import com.upscaler.studio.data.repository.UpscalerRepository
 import com.upscaler.studio.ui.theme.*
@@ -113,6 +114,14 @@ private val CORE_STUDIOS = listOf(
         icon = Icons.Default.Layers,
         route = "studio_depth",
         badge = "Depth Anything V2"
+    ),
+    StudioItem(
+        key = "videogen",
+        title = "Video Gen Studio",
+        description = "Text-to-Video, Image Animation, Character Swap & Motion Copy.",
+        icon = Icons.Default.AutoAwesomeMotion,
+        route = "studio_videogen",
+        badge = "Wan 2.1/2.2"
     )
 )
 
@@ -121,6 +130,7 @@ private fun routeForTask(taskType: String): String = when (taskType) {
     "rife" -> "studio_rife"
     "denoise" -> "studio_denoise"
     "depth" -> "studio_depth"
+    "videogen" -> "studio_videogen"
     else -> "home"
 }
 
@@ -129,6 +139,7 @@ private fun titleForTask(taskType: String): String = when (taskType) {
     "rife" -> "RIFE Frame Interpolation"
     "denoise" -> "AI Anti-Line Denoiser"
     "depth" -> "Depth Map Studio"
+    "videogen" -> "Video Gen Studio"
     else -> taskType
 }
 
@@ -145,7 +156,14 @@ fun HomeScreen(
     val hasToken by repository.hasAuthToken.collectAsState()
     val jobsMap by repository.jobs.collectAsState()
 
+    val selectedColabTarget by repository.selectedColabTarget.collectAsState()
+    val useDedicatedVideoGen by repository.useDedicatedVideoGen.collectAsState()
+    val videoGenConnectionState by repository.videoGenConnectionState.collectAsState()
+    val videoGenBaseUrl by repository.videoGenBaseUrl.collectAsState()
+    val videoGenHasToken by repository.videoGenHasAuthToken.collectAsState()
+
     var showUrlDialog by remember { mutableStateOf(false) }
+    var dialogTarget by remember { mutableStateOf(ColabTarget.PRIMARY) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var inputUrl by remember { mutableStateOf("") }
     var inputToken by remember { mutableStateOf("") }
@@ -267,8 +285,9 @@ fun HomeScreen(
         }
     }
 
-    fun openConnectDialog() {
-        inputUrl = currentUrl
+    fun openConnectDialog(target: ColabTarget = selectedColabTarget) {
+        dialogTarget = target
+        inputUrl = if (target == ColabTarget.VIDEOGEN) videoGenBaseUrl else currentUrl
         inputToken = ""
         dialogError = null
         pendingSwitchDialogUrl = null
@@ -375,24 +394,49 @@ fun HomeScreen(
     ) { padding ->
         when (selectedTab) {
             0 -> HomeTabContent(
-                connectionState = connectionState,
+                selectedColabTarget = selectedColabTarget,
+                onSelectColabTarget = { repository.selectColabTarget(it) },
+                useDedicatedVideoGen = useDedicatedVideoGen,
+                onToggleDedicatedVideoGen = { repository.setUseDedicatedVideoGen(it) },
+                primaryConnectionState = connectionState,
+                videoGenConnectionState = videoGenConnectionState,
+                primaryBaseUrl = currentUrl,
+                videoGenBaseUrl = videoGenBaseUrl,
                 studios = studios,
                 onOpenColab = {
-                    val colabUrl = remoteConfigManager.getColabNotebookUrl()
+                    val colabUrl = if (selectedColabTarget == ColabTarget.VIDEOGEN) {
+                        remoteConfigManager.getVideoGenColabNotebookUrl()
+                    } else {
+                        remoteConfigManager.getColabNotebookUrl()
+                    }
                     val colabIntent = Intent(
                         Intent.ACTION_VIEW,
                         Uri.parse(colabUrl)
                     )
                     runCatching { context.startActivity(colabIntent) }
                 },
-                onDisconnectColab = { repository.disconnect() },
-                onScanQr = { onNavigate("qr_scanner") },
-                onOpenPasteDialog = { openConnectDialog() },
-                onRetryConnect = {
-                    if (currentUrl.isNotBlank()) {
-                        scope.launch { repository.connectAndVerify(currentUrl) }
+                onDisconnectColab = {
+                    if (selectedColabTarget == ColabTarget.VIDEOGEN) {
+                        repository.disconnectVideoGen()
                     } else {
-                        openConnectDialog()
+                        repository.disconnect()
+                    }
+                },
+                onScanQr = { onNavigate("qr_scanner") },
+                onOpenPasteDialog = { openConnectDialog(selectedColabTarget) },
+                onRetryConnect = {
+                    if (selectedColabTarget == ColabTarget.VIDEOGEN) {
+                        if (videoGenBaseUrl.isNotBlank()) {
+                            scope.launch { repository.refreshVideoGenHealthIfConfigured() }
+                        } else {
+                            openConnectDialog(ColabTarget.VIDEOGEN)
+                        }
+                    } else {
+                        if (currentUrl.isNotBlank()) {
+                            scope.launch { repository.refreshHealthIfConfigured() }
+                        } else {
+                            openConnectDialog(ColabTarget.PRIMARY)
+                        }
                     }
                 },
                 onNavigateStudio = onNavigate,
@@ -481,12 +525,75 @@ fun HomeScreen(
             },
             containerColor = DarkSurface,
             title = {
-                Text("Connect to Colab Backend", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (dialogTarget == ColabTarget.VIDEOGEN) "Connect Video Gen Colab" else "Connect Enhancement Colab",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column {
+                    // Colab Target Selector in dialog
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(ShapeCorner10)
+                            .background(Color(0xFF141724))
+                            .border(1.dp, DarkCardBorder, ShapeCorner10)
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        val isPrim = dialogTarget == ColabTarget.PRIMARY
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(ShapeCorner8)
+                                .background(if (isPrim) GreenPillBg else Color.Transparent)
+                                .clickable {
+                                    dialogTarget = ColabTarget.PRIMARY
+                                    inputUrl = currentUrl
+                                    dialogError = null
+                                }
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "⚡ Enhancement",
+                                color = if (isPrim) GreenIconTint else TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        val isVid = dialogTarget == ColabTarget.VIDEOGEN
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(ShapeCorner8)
+                                .background(if (isVid) GreenPillBg else Color.Transparent)
+                                .clickable {
+                                    dialogTarget = ColabTarget.VIDEOGEN
+                                    inputUrl = videoGenBaseUrl
+                                    dialogError = null
+                                }
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "🎬 Video Gen",
+                                color = if (isVid) GreenIconTint else TextSecondary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     Text(
-                        text = "Paste your https://...trycloudflare.com URL or upscaler://connect pairing link:",
+                        text = if (dialogTarget == ColabTarget.VIDEOGEN)
+                            "Paste the Video Gen Colab Cloudflare/Ngrok URL (Wan 2.1/2.2):"
+                        else
+                            "Paste your https://...trycloudflare.com URL or upscaler://connect pairing link:",
                         color = TextSecondary,
                         fontSize = 13.sp
                     )
@@ -650,8 +757,9 @@ fun HomeScreen(
                             return@Button
                         }
                         val candidateBaseUrl = parsed.getOrThrow().baseUrl
-                        val isConnected = connectionState is ConnectionState.Connected
-                        if (isConnected && currentUrl.isNotBlank() && !currentUrl.equals(candidateBaseUrl, ignoreCase = true) && pendingSwitchDialogUrl == null) {
+                        val targetUrl = if (dialogTarget == ColabTarget.VIDEOGEN) videoGenBaseUrl else currentUrl
+                        val isConnected = if (dialogTarget == ColabTarget.VIDEOGEN) videoGenConnectionState is ConnectionState.Connected else connectionState is ConnectionState.Connected
+                        if (isConnected && targetUrl.isNotBlank() && !targetUrl.equals(candidateBaseUrl, ignoreCase = true) && pendingSwitchDialogUrl == null) {
                             pendingSwitchDialogUrl = candidateBaseUrl
                             return@Button
                         }
@@ -659,7 +767,11 @@ fun HomeScreen(
                         isConnectingDialog = true
                         dialogError = null
                         scope.launch {
-                            val res = repository.connectAndVerify(inputUrl, inputToken.ifBlank { null })
+                            val res = if (dialogTarget == ColabTarget.VIDEOGEN) {
+                                repository.connectAndVerifyVideoGen(inputUrl, inputToken.ifBlank { null })
+                            } else {
+                                repository.connectAndVerify(inputUrl, inputToken.ifBlank { null }, ColabTarget.PRIMARY)
+                            }
                             isConnectingDialog = false
                             if (res.isSuccess) {
                                 showUrlDialog = false
@@ -1109,7 +1221,14 @@ private fun BottomNavTab(
 
 @Composable
 private fun HomeTabContent(
-    connectionState: ConnectionState,
+    selectedColabTarget: ColabTarget,
+    onSelectColabTarget: (ColabTarget) -> Unit,
+    useDedicatedVideoGen: Boolean,
+    onToggleDedicatedVideoGen: (Boolean) -> Unit,
+    primaryConnectionState: ConnectionState,
+    videoGenConnectionState: ConnectionState,
+    primaryBaseUrl: String,
+    videoGenBaseUrl: String,
     studios: List<StudioItem>,
     onOpenColab: () -> Unit,
     onDisconnectColab: () -> Unit,
@@ -1119,13 +1238,47 @@ private fun HomeTabContent(
     onNavigateStudio: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val activeState = when (selectedColabTarget) {
+        ColabTarget.PRIMARY -> primaryConnectionState
+        ColabTarget.VIDEOGEN -> if (useDedicatedVideoGen) videoGenConnectionState else primaryConnectionState
+    }
+    val activeBaseUrl = when (selectedColabTarget) {
+        ColabTarget.PRIMARY -> primaryBaseUrl
+        ColabTarget.VIDEOGEN -> if (useDedicatedVideoGen) videoGenBaseUrl else primaryBaseUrl
+    }
+    val isSharedFallback = selectedColabTarget == ColabTarget.VIDEOGEN && !useDedicatedVideoGen
+
     LazyColumn(
         modifier = modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
+            ColabSwitcherBar(
+                selectedTarget = selectedColabTarget,
+                onSelectTarget = onSelectColabTarget,
+                primaryConnected = primaryConnectionState is ConnectionState.Connected,
+                videoGenConnected = if (useDedicatedVideoGen) videoGenConnectionState is ConnectionState.Connected else primaryConnectionState is ConnectionState.Connected,
+                useDedicatedVideoGen = useDedicatedVideoGen
+            )
+        }
+
+        if (selectedColabTarget == ColabTarget.VIDEOGEN) {
+            item {
+                DedicatedColabModeCard(
+                    useDedicated = useDedicatedVideoGen,
+                    onToggle = onToggleDedicatedVideoGen,
+                    primaryBaseUrl = primaryBaseUrl,
+                    isPrimaryConnected = primaryConnectionState is ConnectionState.Connected
+                )
+            }
+        }
+
+        item {
             ConnectionHeroCard(
-                connectionState = connectionState,
+                target = selectedColabTarget,
+                connectionState = activeState,
+                isSharedFallback = isSharedFallback,
+                sharedHost = primaryBaseUrl,
                 onOpenColab = onOpenColab,
                 onDisconnectColab = onDisconnectColab,
                 onScanQr = onScanQr,
@@ -1272,8 +1425,228 @@ private fun HomeTabContent(
 }
 
 @Composable
+private fun ColabSwitcherBar(
+    selectedTarget: ColabTarget,
+    onSelectTarget: (ColabTarget) -> Unit,
+    primaryConnected: Boolean,
+    videoGenConnected: Boolean,
+    useDedicatedVideoGen: Boolean
+) {
+    val haptic = LocalHapticFeedback.current
+    Surface(
+        color = DarkSurface,
+        shape = ShapeCorner16,
+        border = BorderStroke(1.dp, DarkCardBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Enhancement Colab Tab
+            val isPrimary = selectedTarget == ColabTarget.PRIMARY
+            val primaryInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ShapeCorner12)
+                    .background(if (isPrimary) Color(0xFF132A1F) else Color.Transparent)
+                    .border(
+                        1.dp,
+                        if (isPrimary) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
+                        ShapeCorner12
+                    )
+                    .clickable(
+                        interactionSource = primaryInteraction,
+                        indication = null
+                    ) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectTarget(ColabTarget.PRIMARY)
+                    }
+                    .padding(vertical = 10.dp, horizontal = 10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (primaryConnected) StatusOnlineGreen else StatusOfflineRed)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Enhancement",
+                            color = if (isPrimary) Color.White else TextSecondary,
+                            fontSize = 13.5.sp,
+                            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
+                        )
+                        Text(
+                            text = "2X · RIFE · Depth",
+                            color = if (isPrimary) GreenIconTint else TextMuted,
+                            fontSize = 10.5.sp
+                        )
+                    }
+                }
+            }
+
+            // Video Gen Colab Tab
+            val isVideoGen = selectedTarget == ColabTarget.VIDEOGEN
+            val videoGenInteraction = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ShapeCorner12)
+                    .background(if (isVideoGen) Color(0xFF132A1F) else Color.Transparent)
+                    .border(
+                        1.dp,
+                        if (isVideoGen) GreenPrimary.copy(alpha = 0.8f) else Color.Transparent,
+                        ShapeCorner12
+                    )
+                    .clickable(
+                        interactionSource = videoGenInteraction,
+                        indication = null
+                    ) {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onSelectTarget(ColabTarget.VIDEOGEN)
+                    }
+                    .padding(vertical = 10.dp, horizontal = 10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (videoGenConnected) StatusOnlineGreen else StatusOfflineRed)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Video Gen",
+                            color = if (isVideoGen) Color.White else TextSecondary,
+                            fontSize = 13.5.sp,
+                            fontWeight = if (isVideoGen) FontWeight.Bold else FontWeight.Medium
+                        )
+                        Text(
+                            text = if (useDedicatedVideoGen) "Dedicated Server" else "Shared Mode",
+                            color = if (isVideoGen) GreenIconTint else TextMuted,
+                            fontSize = 10.5.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DedicatedColabModeCard(
+    useDedicated: Boolean,
+    onToggle: (Boolean) -> Unit,
+    primaryBaseUrl: String,
+    isPrimaryConnected: Boolean
+) {
+    Surface(
+        color = Color(0xFF131520),
+        shape = ShapeCorner14,
+        border = BorderStroke(1.dp, DarkCardBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = if (useDedicated) GreenIconTint else TextSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Use Dedicated Video Colab",
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (useDedicated)
+                                "Separate GPU server for Wan 2.1/2.2 diffusion"
+                            else
+                                "Sharing Enhancement Colab (Single Server Mode)",
+                            color = TextSecondary,
+                            fontSize = 11.5.sp
+                        )
+                    }
+                }
+                Switch(
+                    checked = useDedicated,
+                    onCheckedChange = onToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = GreenPrimary,
+                        uncheckedThumbColor = TextSecondary,
+                        uncheckedTrackColor = Color(0xFF1E2235)
+                    )
+                )
+            }
+            if (!useDedicated) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color = Color(0xFF0D1E16),
+                    shape = ShapeCorner8,
+                    border = BorderStroke(1.dp, Color(0xFF1B4D36)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isPrimaryConnected) Icons.Default.CheckCircle else Icons.Default.Info,
+                            contentDescription = null,
+                            tint = if (isPrimaryConnected) StatusOnlineGreen else StatusWarningAmber,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val cleanDisplay = if (primaryBaseUrl.length > 28) primaryBaseUrl.take(28) + "..." else primaryBaseUrl
+                        Text(
+                            text = if (isPrimaryConnected)
+                                "Linked to primary: $cleanDisplay"
+                            else
+                                "Primary Colab is offline. Connect primary or enable Dedicated Colab.",
+                            color = if (isPrimaryConnected) GreenIconTint else StatusWarningAmber,
+                            fontSize = 11.5.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ConnectionHeroCard(
+    target: ColabTarget = ColabTarget.PRIMARY,
     connectionState: ConnectionState,
+    isSharedFallback: Boolean = false,
+    sharedHost: String = "",
     onOpenColab: () -> Unit,
     onDisconnectColab: () -> Unit,
     onScanQr: () -> Unit,
@@ -1287,21 +1660,53 @@ private fun ConnectionHeroCard(
         is ConnectionState.Failed -> StatusOfflineRed
         is ConnectionState.Disconnected -> StatusOfflineRed
     }
-    val statusHeading = when (connectionState) {
-        is ConnectionState.Connected -> "Backend Online"
-        is ConnectionState.Connecting -> "Connecting to Colab..."
-        is ConnectionState.Failed -> "Connection Failed"
-        is ConnectionState.Disconnected -> "Backend Offline"
-    }
-    val statusSub = when (connectionState) {
-        is ConnectionState.Connected -> {
-            val g = connectionState.health.gpu
-            "GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free)"
+    val statusHeading = when {
+        target == ColabTarget.VIDEOGEN && isSharedFallback -> {
+            when (connectionState) {
+                is ConnectionState.Connected -> "Shared Backend: Wan Ready"
+                is ConnectionState.Connecting -> "Checking Shared Colab..."
+                is ConnectionState.Failed -> "Shared Backend Offline"
+                is ConnectionState.Disconnected -> "Shared Backend Offline"
+            }
         }
-        is ConnectionState.Connecting -> "Checking health & capabilities at ${connectionState.baseUrl}"
-        is ConnectionState.Failed -> connectionState.message
-        is ConnectionState.Disconnected ->
-            "Start the 1-click Colab notebook, then tap the app link, scan QR, or paste URL."
+        target == ColabTarget.VIDEOGEN -> {
+            when (connectionState) {
+                is ConnectionState.Connected -> "Video Gen Online"
+                is ConnectionState.Connecting -> "Connecting to Video Gen..."
+                is ConnectionState.Failed -> "Video Gen Offline"
+                is ConnectionState.Disconnected -> "Video Gen Offline"
+            }
+        }
+        else -> {
+            when (connectionState) {
+                is ConnectionState.Connected -> "Backend Online"
+                is ConnectionState.Connecting -> "Connecting to Colab..."
+                is ConnectionState.Failed -> "Connection Failed"
+                is ConnectionState.Disconnected -> "Backend Offline"
+            }
+        }
+    }
+    val statusSub = when {
+        target == ColabTarget.VIDEOGEN && isSharedFallback -> {
+            when (connectionState) {
+                is ConnectionState.Connected -> {
+                    val g = connectionState.health.gpu
+                    "Using Enhancement GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free). Wan video generation supported."
+                }
+                else -> "Primary Colab is offline. Connect Enhancement Colab or toggle Dedicated Colab."
+            }
+        }
+        else -> when (connectionState) {
+            is ConnectionState.Connected -> {
+                val g = connectionState.health.gpu
+                "GPU: ${g.device} (${g.vramFreeMb.toInt()} MB free)"
+            }
+            is ConnectionState.Connecting -> "Checking health & capabilities at ${connectionState.baseUrl}"
+            is ConnectionState.Failed -> connectionState.message
+            is ConnectionState.Disconnected ->
+                if (target == ColabTarget.VIDEOGEN) "Start the 1-click Video Gen Colab notebook, then paste URL or scan QR."
+                else "Start the 1-click Colab notebook, then tap the app link, scan QR, or paste URL."
+        }
     }
 
     Box(
@@ -1496,7 +1901,13 @@ private fun ConnectionHeroCard(
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Open Colab", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(
+                            text = if (target == ColabTarget.VIDEOGEN) "Open Video Colab" else "Open Colab",
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
                     }
                 }
 
@@ -1522,15 +1933,17 @@ private fun ConnectionHeroCard(
                         .defaultMinSize(minHeight = 48.dp)
                         .clip(ShapeCorner20)
                         .background(
-                            if (isConnected) {
+                            if (isConnected && !isSharedFallback) {
                                 androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFDC2626), Color(0xFFEF4444)))
+                            } else if (isSharedFallback) {
+                                androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF1B3D2B), Color(0xFF1B3D2B)))
                             } else {
                                 androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFF381A22), Color(0xFF381A22)))
                             }
                         )
                         .border(
                             1.dp,
-                            if (isConnected) Color(0xFFEF4444) else Color(0xFF4A2530),
+                            if (isConnected && !isSharedFallback) Color(0xFFEF4444) else if (isSharedFallback) Color(0xFF2C6B4A) else Color(0xFF4A2530),
                             ShapeCorner20
                         )
                         .semantics { role = Role.Button }
@@ -1550,14 +1963,14 @@ private fun ConnectionHeroCard(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.LinkOff,
+                            imageVector = if (isSharedFallback) Icons.Default.Link else Icons.Default.LinkOff,
                             contentDescription = null,
                             tint = if (isConnected) Color.White else Color(0xFFB07A85),
                             modifier = Modifier.size(19.dp)
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "Disconnect",
+                            text = if (isSharedFallback) "Shared Mode" else "Disconnect",
                             color = if (isConnected) Color.White else Color(0xFFB07A85),
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,

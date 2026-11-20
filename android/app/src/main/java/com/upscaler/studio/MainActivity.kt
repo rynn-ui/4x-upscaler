@@ -52,6 +52,7 @@ import com.upscaler.studio.ui.studios.DenoiserStudioScreen
 import com.upscaler.studio.ui.studios.DepthStudioScreen
 import com.upscaler.studio.ui.studios.RifeStudioScreen
 import com.upscaler.studio.ui.studios.UpscalerStudioScreen
+import com.upscaler.studio.ui.studios.VideoGenStudioScreen
 import com.upscaler.studio.ui.theme.DarkSurface
 import com.upscaler.studio.ui.theme.GreenPrimary
 import com.upscaler.studio.ui.theme.TextSecondary
@@ -147,6 +148,9 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Screen.DepthStudio.route) {
                             DepthStudioScreen(onBack = { navController.popBackStack() })
+                        }
+                        composable(Screen.VideoGenStudio.route) {
+                            VideoGenStudioScreen(onBack = { navController.popBackStack() })
                         }
                         composable(Screen.QrScanner.route) {
                             QrScannerScreen(

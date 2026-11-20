@@ -70,6 +70,11 @@ data class BackendConnection(
     val wsClient: JobWebSocketClient
 )
 
+enum class ColabTarget(val title: String, val subtitle: String) {
+    PRIMARY("Enhancement Colab", "Upscale, RIFE, Denoise & Depth"),
+    VIDEOGEN("Video Gen Colab", "Wan 2.1/2.2 Text-to-Video & Swap")
+}
+
 class UpscalerRepository private constructor() {
 
     companion object {
@@ -77,6 +82,9 @@ class UpscalerRepository private constructor() {
         private const val PREFS_NAME = "upscaler_studio_prefs"
         private const val KEY_BASE_URL = "backend_base_url"
         private const val KEY_AUTH_TOKEN = "backend_auth_token"
+        private const val KEY_VIDEOGEN_BASE_URL = "videogen_backend_base_url"
+        private const val KEY_VIDEOGEN_AUTH_TOKEN = "videogen_backend_auth_token"
+        private const val KEY_VIDEOGEN_USE_DEDICATED = "videogen_use_dedicated"
         private const val KEY_JOBS_JSON = "persisted_jobs_json"
     }
 
@@ -88,6 +96,9 @@ class UpscalerRepository private constructor() {
     private var appContext: Context? = null
     private var prefs: SharedPreferences? = null
 
+    private val _selectedColabTarget = MutableStateFlow(ColabTarget.PRIMARY)
+    val selectedColabTarget: StateFlow<ColabTarget> = _selectedColabTarget.asStateFlow()
+
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -97,6 +108,18 @@ class UpscalerRepository private constructor() {
     private val _hasAuthToken = MutableStateFlow(false)
     val hasAuthToken: StateFlow<Boolean> = _hasAuthToken.asStateFlow()
 
+    private val _useDedicatedVideoGen = MutableStateFlow(false)
+    val useDedicatedVideoGen: StateFlow<Boolean> = _useDedicatedVideoGen.asStateFlow()
+
+    private val _videoGenConnectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected())
+    val videoGenConnectionState: StateFlow<ConnectionState> = _videoGenConnectionState.asStateFlow()
+
+    private val _videoGenBaseUrl = MutableStateFlow("")
+    val videoGenBaseUrl: StateFlow<String> = _videoGenBaseUrl.asStateFlow()
+
+    private val _videoGenHasAuthToken = MutableStateFlow(false)
+    val videoGenHasAuthToken: StateFlow<Boolean> = _videoGenHasAuthToken.asStateFlow()
+
     private val _jobs = MutableStateFlow<Map<String, ManagedJob>>(emptyMap())
     val jobs: StateFlow<Map<String, ManagedJob>> = _jobs.asStateFlow()
 
@@ -105,6 +128,10 @@ class UpscalerRepository private constructor() {
 
     private var currentAuthToken: String? = null
     val activeAuthToken: String? get() = currentAuthToken
+
+    private var activeVideoGenConnection: BackendConnection? = null
+    private var currentVideoGenAuthToken: String? = null
+    val activeVideoGenAuthToken: String? get() = currentVideoGenAuthToken
     private var okHttpClient: OkHttpClient = buildHttpClient(null)
     private var apiService: UpscalerApiService? = null
     private var wsClient: JobWebSocketClient = JobWebSocketClient(okHttpClient)
@@ -151,6 +178,23 @@ class UpscalerRepository private constructor() {
                     _hasAuthToken.value = !savedToken.isNullOrBlank()
                 }
             }
+            val savedUseDedicated = prefs?.getBoolean(KEY_VIDEOGEN_USE_DEDICATED, false) ?: false
+            _useDedicatedVideoGen.value = savedUseDedicated
+
+            val savedVideoGenUrl = prefs?.getString(KEY_VIDEOGEN_BASE_URL, "") ?: ""
+            val savedVideoGenToken = prefs?.getString(KEY_VIDEOGEN_AUTH_TOKEN, null)
+            if (savedVideoGenUrl.isNotBlank()) {
+                val parsed = BackendUrlParser.normalizeBackendUrl(savedVideoGenUrl)
+                if (parsed.isSuccess) {
+                    val normUrl = parsed.getOrThrow()
+                    val conn = getConnectionFor(normUrl, savedVideoGenToken)
+                    activeVideoGenConnection = conn
+                    currentVideoGenAuthToken = savedVideoGenToken
+                    _videoGenBaseUrl.value = normUrl
+                    _videoGenHasAuthToken.value = !savedVideoGenToken.isNullOrBlank()
+                }
+            }
+
             restoreJobsLocked()
         }
 
@@ -162,6 +206,9 @@ class UpscalerRepository private constructor() {
 
         if (_currentBaseUrl.value.isNotBlank()) {
             repoScope.launch { refreshHealthIfConfigured() }
+        }
+        if (_videoGenBaseUrl.value.isNotBlank() && _useDedicatedVideoGen.value) {
+            repoScope.launch { refreshVideoGenHealthIfConfigured() }
         }
     }
 
@@ -217,7 +264,14 @@ class UpscalerRepository private constructor() {
      * Reconnecting to the same host with blank token retains the existing token.
      * Connecting to a different host does NOT inherit old credentials.
      */
-    suspend fun connectAndVerify(rawInput: String, manualToken: String? = null): Result<HealthResponse> {
+    suspend fun connectAndVerify(
+        rawInput: String,
+        manualToken: String? = null,
+        target: ColabTarget = _selectedColabTarget.value
+    ): Result<HealthResponse> {
+        if (target == ColabTarget.VIDEOGEN) {
+            return connectAndVerifyVideoGen(rawInput, manualToken)
+        }
         val parsed = BackendUrlParser.parsePairingInput(rawInput)
         if (parsed.isFailure) {
             val err = parsed.exceptionOrNull() ?: IllegalArgumentException("Invalid backend URL")
@@ -369,6 +423,191 @@ class UpscalerRepository private constructor() {
             prefs?.edit()
                 ?.remove(KEY_BASE_URL)
                 ?.remove(KEY_AUTH_TOKEN)
+                ?.apply()
+        }
+    }
+
+    fun selectColabTarget(target: ColabTarget) {
+        _selectedColabTarget.value = target
+    }
+
+    fun setUseDedicatedVideoGen(enabled: Boolean) {
+        _useDedicatedVideoGen.value = enabled
+        prefs?.edit()?.putBoolean(KEY_VIDEOGEN_USE_DEDICATED, enabled)?.apply()
+    }
+
+    fun getEffectiveVideoGenConnection(): BackendConnection? {
+        return synchronized(stateLock) {
+            if (_useDedicatedVideoGen.value && activeVideoGenConnection != null) {
+                activeVideoGenConnection
+            } else {
+                activeConnection
+            }
+        }
+    }
+
+    fun getEffectiveVideoGenConnectionState(): ConnectionState {
+        return if (_useDedicatedVideoGen.value) {
+            _videoGenConnectionState.value
+        } else {
+            _connectionState.value
+        }
+    }
+
+    fun getEffectiveVideoGenBaseUrl(): String {
+        return if (_useDedicatedVideoGen.value) {
+            _videoGenBaseUrl.value
+        } else {
+            _currentBaseUrl.value
+        }
+    }
+
+    suspend fun connectAndVerifyVideoGen(rawInput: String, manualToken: String? = null): Result<HealthResponse> {
+        val parsed = BackendUrlParser.parsePairingInput(rawInput)
+        if (parsed.isFailure) {
+            val err = parsed.exceptionOrNull() ?: IllegalArgumentException("Invalid Video Gen backend URL")
+            return Result.failure(err)
+        }
+        val config = parsed.getOrThrow()
+
+        val currentUrl = _videoGenBaseUrl.value
+        val existingToken = currentVideoGenAuthToken
+        val candidateToken = when {
+            !manualToken.isNullOrBlank() -> manualToken.trim()
+            !config.authToken.isNullOrBlank() -> config.authToken.trim()
+            config.baseUrl.equals(currentUrl, ignoreCase = true) -> existingToken
+            else -> null
+        }
+
+        return connectMutex.withLock {
+            withContext(Dispatchers.IO) {
+                _videoGenConnectionState.value = ConnectionState.Connecting(config.baseUrl)
+
+                val candidateClient = buildHttpClient(candidateToken)
+                val candidateRetrofit = Retrofit.Builder()
+                    .baseUrl("${config.baseUrl}/")
+                    .client(candidateClient)
+                    .addConverterFactory(GsonConverterFactory.create())
+                    .build()
+                val candidateService = candidateRetrofit.create(UpscalerApiService::class.java)
+
+                var health: HealthResponse? = null
+                var lastErr: Exception? = null
+                for (attempt in 1..3) {
+                    try {
+                        health = candidateService.getHealth()
+                        break
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        lastErr = e
+                        if (attempt < 3) {
+                            kotlinx.coroutines.delay(1000L)
+                        }
+                    }
+                }
+
+                if (health == null) {
+                    val finalErr = lastErr ?: IllegalStateException("Failed to connect to Video Gen backend")
+                    val friendly = formatNetworkError(finalErr)
+                    _videoGenConnectionState.value = ConnectionState.Failed(config.baseUrl, friendly)
+                    return@withContext Result.failure(IllegalStateException(friendly, finalErr))
+                }
+
+                try {
+                    val caps = try {
+                        candidateService.getCapabilities()
+                    } catch (_: Exception) {
+                        null
+                    }
+
+                    val candidateWs = JobWebSocketClient(candidateClient)
+                    val newConnection = BackendConnection(
+                        baseUrl = config.baseUrl,
+                        authToken = candidateToken,
+                        backendInstanceId = health.backendInstanceId,
+                        okHttpClient = candidateClient,
+                        apiService = candidateService,
+                        wsClient = candidateWs
+                    )
+
+                    synchronized(stateLock) {
+                        activeVideoGenConnection = newConnection
+                        val cacheKey = "${config.baseUrl}|${candidateToken ?: ""}"
+                        connectionCache[cacheKey] = newConnection
+
+                        currentVideoGenAuthToken = candidateToken
+                        _videoGenBaseUrl.value = config.baseUrl
+                        _videoGenHasAuthToken.value = !candidateToken.isNullOrBlank()
+                        _useDedicatedVideoGen.value = true
+
+                        prefs?.edit()
+                            ?.putString(KEY_VIDEOGEN_BASE_URL, config.baseUrl)
+                            ?.putBoolean(KEY_VIDEOGEN_USE_DEDICATED, true)
+                            ?.apply {
+                                if (candidateToken != null) putString(KEY_VIDEOGEN_AUTH_TOKEN, candidateToken)
+                                else remove(KEY_VIDEOGEN_AUTH_TOKEN)
+                            }
+                            ?.apply()
+                    }
+
+                    _videoGenConnectionState.value = ConnectionState.Connected(health, caps)
+                    Result.success(health)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val friendly = formatNetworkError(e)
+                    _videoGenConnectionState.value = ConnectionState.Failed(config.baseUrl, friendly)
+                    Result.failure(IllegalStateException(friendly, e))
+                }
+            }
+        }
+    }
+
+    suspend fun refreshVideoGenHealthIfConfigured(): Result<HealthResponse> = withContext(Dispatchers.IO) {
+        connectMutex.withLock {
+            val conn = synchronized(stateLock) { activeVideoGenConnection }
+            if (conn == null || conn.baseUrl.isBlank()) {
+                _videoGenConnectionState.value = ConnectionState.Disconnected()
+                return@withLock Result.failure(IllegalStateException("No Video Gen backend configured."))
+            }
+            _videoGenConnectionState.value = ConnectionState.Connecting(conn.baseUrl)
+            try {
+                val health = conn.apiService.getHealth()
+                val caps = try {
+                    conn.apiService.getCapabilities()
+                } catch (_: Exception) {
+                    null
+                }
+                if (health.backendInstanceId != null && conn.backendInstanceId != null && health.backendInstanceId != conn.backendInstanceId) {
+                    val updatedConn = conn.copy(backendInstanceId = health.backendInstanceId)
+                    synchronized(stateLock) {
+                        activeVideoGenConnection = updatedConn
+                        connectionCache["${conn.baseUrl}|${conn.authToken ?: ""}"] = updatedConn
+                    }
+                }
+                _videoGenConnectionState.value = ConnectionState.Connected(health, caps)
+                Result.success(health)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val friendly = formatNetworkError(e)
+                _videoGenConnectionState.value = ConnectionState.Failed(conn.baseUrl, friendly)
+                Result.failure(IllegalStateException(friendly, e))
+            }
+        }
+    }
+
+    fun disconnectVideoGen() {
+        synchronized(stateLock) {
+            activeVideoGenConnection = null
+            currentVideoGenAuthToken = null
+            _videoGenBaseUrl.value = ""
+            _videoGenHasAuthToken.value = false
+            _videoGenConnectionState.value = ConnectionState.Disconnected()
+            prefs?.edit()
+                ?.remove(KEY_VIDEOGEN_BASE_URL)
+                ?.remove(KEY_VIDEOGEN_AUTH_TOKEN)
                 ?.apply()
         }
     }

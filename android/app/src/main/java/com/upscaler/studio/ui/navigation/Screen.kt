@@ -7,6 +7,7 @@ sealed class Screen(val route: String) {
     object RifeStudio : Screen("studio_rife")
     object DenoiserStudio : Screen("studio_denoise")
     object DepthStudio : Screen("studio_depth")
+    object VideoGenStudio : Screen("studio_videogen")
     object QrScanner : Screen("qr_scanner")
     object Settings : Screen("settings")
 }

@@ -136,6 +136,15 @@ class RemoteConfigManager private constructor(context: Context) {
         }
     }
 
+    fun getVideoGenColabNotebookUrl(): String {
+        return try {
+            val url = remoteConfig.getString(KEY_VIDEOGEN_COLAB_NOTEBOOK_URL)
+            if (url.isNotBlank()) url else DEFAULT_VIDEOGEN_COLAB_NOTEBOOK_URL
+        } catch (_: Exception) {
+            DEFAULT_VIDEOGEN_COLAB_NOTEBOOK_URL
+        }
+    }
+
     companion object {
         private const val TAG = "RemoteConfigManager"
 
@@ -149,8 +158,10 @@ class RemoteConfigManager private constructor(context: Context) {
         const val KEY_IS_MAINTENANCE_MODE = "is_maintenance_mode"
         const val KEY_MAINTENANCE_MESSAGE = "maintenance_message"
         const val KEY_COLAB_NOTEBOOK_URL = "colab_notebook_url"
+        const val KEY_VIDEOGEN_COLAB_NOTEBOOK_URL = "videogen_colab_notebook_url"
 
         const val DEFAULT_COLAB_NOTEBOOK_URL = "https://colab.research.google.com/drive/1i1WCx7EPUrMkc-jjME60AMMRDrw8XvkX"
+        const val DEFAULT_VIDEOGEN_COLAB_NOTEBOOK_URL = "https://colab.research.google.com/github/rynn-ui/upscaler-studio/blob/main/backend/videogen_colab.ipynb"
 
         @Volatile private var instance: RemoteConfigManager? = null
 
